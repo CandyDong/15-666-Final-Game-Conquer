@@ -196,6 +196,7 @@ void PlayMode::update(float elapsed) {
 				if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
 				//whole message *is* here, so set current server message:
 
+				players.clear();
 				uint8_t byte_index = 2;
 				for (int k = 0; k < num_players; k++) {
 					uint8_t id = c->recv_buffer[byte_index++];
@@ -206,12 +207,9 @@ void PlayMode::update(float elapsed) {
 					uint8_t row = c->recv_buffer[byte_index++];
 					uint8_t col = c->recv_buffer[byte_index++];
 					std::cout << name << " : (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
-					auto p = players.find(id);
-					if (p == players.end()) {
-						// add new player to the players map
-						players.emplace(id, 
-										Player(id, name, hex_to_color_vec(player_colors[id]), row, col));
-					}
+					
+					// add new player to the players map
+					players.emplace_back(id, name, hex_to_color_vec(player_colors[id]), row, col);
 				}
 				//and consume this part of the buffer:
 				c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
@@ -226,6 +224,8 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	// draw the tilemap
 	draw_tiles(vertices);
+	// draw the players
+	draw_players(vertices);
 
 	//compute area that should be visible:
 	glm::vec2 scene_min = glm::vec2(-PADDING, -PADDING);
@@ -355,4 +355,13 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 	}
 	// draw the borders for debugging purposes
 	// draw_borders(hex_to_color_vec(border_color), vertices);
+}
+
+void PlayMode::draw_players(std::vector<Vertex> &vertices) {
+	for (auto player : players) {
+		draw_rectangle(glm::vec2(player.col*TILE_SIZE, player.row*TILE_SIZE),
+						glm::vec2(TILE_SIZE, TILE_SIZE),
+						player.color,
+						vertices);
+	}
 }

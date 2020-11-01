@@ -57,7 +57,7 @@ struct PlayMode : Mode {
 		uint8_t row;
 		uint8_t col;
 	};
-	std::unordered_map<uint8_t, Player> players;
+	std::vector<Player> players;
 
 	//input tracking:
 	struct Button {
@@ -94,5 +94,6 @@ struct PlayMode : Mode {
 					std::vector<Vertex> &vertices);
 
 	void draw_tiles(std::vector<Vertex> &vertices);
+	void draw_players(std::vector<Vertex> &vertices);
 	
 };

@@ -8,6 +8,7 @@
 #include <iostream>
 #include <cassert>
 #include <unordered_map>
+#include <deque>
 
 int main(int argc, char **argv) {
 #ifdef _WIN32
@@ -31,15 +32,16 @@ int main(int argc, char **argv) {
 	constexpr float ServerTick = 1.0f / 10.0f; //TODO: set a server tick that makes sense for your game
 
 	//server state:
-
+	static std::deque<uint32_t> unused_player_ids = {0, 1, 2, 3, 4};
 	//per-client state:
 	struct PlayerInfo {
-		PlayerInfo() {
-			static uint32_t next_player_id = 1;
-			name = "Player" + std::to_string(next_player_id);
-			next_player_id += 1;
+		PlayerInfo() { 
+			id = unused_player_ids.front();
+			unused_player_ids.pop_front();
+			name = "Player " + std::to_string(id);
 		}
 		std::string name;
+		uint32_t id;
 
 		uint32_t left_presses = 0;
 		uint32_t right_presses = 0;
@@ -64,19 +66,20 @@ int main(int argc, char **argv) {
 			server.poll([&](Connection *c, Connection::Event evt){
 				if (evt == Connection::OnOpen) {
 					//client connected:
-
-					//create some player info for them:
-					players.emplace(c, PlayerInfo());
-
-
+					if (unused_player_ids.empty()) { // server is full
+						c->close();
+					} else {
+						//create some player info for them:
+						players.emplace(c, PlayerInfo());
+					}
 				} else if (evt == Connection::OnClose) {
 					//client disconnected:
 
 					//remove them from the players list:
 					auto f = players.find(c);
 					assert(f != players.end());
+					unused_player_ids.emplace_back(f->second.id);
 					players.erase(f);
-
 
 				} else { assert(evt == Connection::OnRecv);
 					//got data from client:
@@ -116,45 +119,24 @@ int main(int argc, char **argv) {
 
 		//update current game state
 		//TODO: replace with *your* game state update
-		std::string status_message = "";
-		int32_t overall_sum = 0;
-		for (auto &[c, player] : players) {
-			(void)c; //work around "unused variable" warning on whatever version of g++ github actions is running
-			for (; player.left_presses > 0; --player.left_presses) {
-				player.total -= 1;
-			}
-			for (; player.right_presses > 0; --player.right_presses) {
-				player.total += 1;
-			}
-			for (; player.down_presses > 0; --player.down_presses) {
-				player.total -= 10;
-			}
-			for (; player.up_presses > 0; --player.up_presses) {
-				player.total += 10;
-			}
-			if (status_message != "") status_message += " + ";
-			status_message += std::to_string(player.total) + " (" + player.name + ")";
-
-			overall_sum += player.total;
-		}
-		status_message += " = " + std::to_string(overall_sum);
-		//std::cout << status_message << std::endl; //DEBUG
 
 		//send updated game state to all clients
 		//TODO: update for your game state
 		for (auto &[c, player] : players) {
 			(void)player; //work around "unused variable" warning on whatever g++ github actions uses
 			//send an update starting with 'm', a 24-bit size, and a blob of text:
-			c->send('m');
-			c->send(uint8_t(status_message.size() >> 16));
-			c->send(uint8_t((status_message.size() >> 8) % 256));
-			c->send(uint8_t(status_message.size() % 256));
-			c->send_buffer.insert(c->send_buffer.end(), status_message.begin(), status_message.end());
+			c->send('a');
+			c->send(uint8_t(players.size()));
+			// send along all player info
+			for (auto &[c_prime, player_prime] : players) {
+				(void)c_prime;
+				c->send(uint8_t(player_prime.id));
+				c->send(uint8_t(player_prime.name.size())); // TODO(candy): make sure length of name is no longer than one byte
+				// std::cout << "name=" << player_prime.name << ", size=" << player_prime.name.size() << std::endl;
+				c->send_buffer.insert(c->send_buffer.end(), player_prime.name.begin(), player_prime.name.end());
+			}
 		}
-
 	}
-
-
 	return 0;
 
 #ifdef _WIN32

@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <deque>
+#include <unordered_map>
 
 struct PlayMode : Mode {
 	PlayMode(Client &client);
@@ -27,10 +28,11 @@ struct PlayMode : Mode {
 	const float GRID_H = NUM_ROWS*TILE_SIZE;
 	const float PADDING = 50.0f;
 	
-	const int bg_color = 0x404040ff;
+	const int bg_color = 0x7c6577ff;
 	const int white_color = 0xffffffff;
 	const int base_color = 0xe4ded2ff; // initial color of tiles
 	const int border_color = 0xd5cdd8ff;
+	const std::vector<uint32_t> player_colors{0x390099ff, 0x9e0059ff, 0xff0054ff, 0xff5400ff, 0xffbd00ff};
 
 	enum class TileType {EMPTY_TILE = 0, PLAYER_TILE};
 
@@ -44,17 +46,23 @@ struct PlayMode : Mode {
 		glm::vec2 pos;
 		glm::u8vec4 color; // white for EMPTY_TILE, else the same as player color
 	};
-
 	std::vector<Tile> tiles;
+
+	struct Player {
+		Player(uint8_t _id, std::string _name, glm::u8vec4 _color, glm::vec2 _pos):
+				id(_id), name(_name), color(_color), pos(_pos) { }
+		uint8_t id;
+		std::string name;
+		glm::u8vec4 color;
+		glm::vec2 pos;
+	};
+	std::unordered_map<uint8_t, Player> players;
 
 	//input tracking:
 	struct Button {
 		uint8_t downs = 0;
 		uint8_t pressed = 0;
 	} left, right, down, up;
-
-	//last message from server:
-	std::string server_message;
 
 	//connection to server:
 	Client &client;

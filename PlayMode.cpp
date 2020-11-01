@@ -181,22 +181,38 @@ void PlayMode::update(float elapsed) {
 			throw std::runtime_error("Lost connection to server!");
 		} else { assert(event == Connection::OnRecv);
 			std::cout << "[" << c->socket << "] recv'd data. Current buffer:\n" << hex_dump(c->recv_buffer); std::cout.flush();
-			//expecting message(s) like 'm' + 3-byte length + length bytes of text:
-			while (c->recv_buffer.size() >= 4) {
-				std::cout << "[" << c->socket << "] recv'd data. Current buffer:\n" << hex_dump(c->recv_buffer); std::cout.flush();
+			//expecting message(s): 'S' + 1-byte [number of players] + [number-of-player] chunks of player info:
+			while (c->recv_buffer.size() >= 2) {
+				std::cout << "[" << c->socket << "] recv'd data of size " 
+						<< c->recv_buffer.size() << ". Current buffer:\n" 
+						<< hex_dump(c->recv_buffer); std::cout.flush();
 				char type = c->recv_buffer[0];
-				if (type != 'm') {
+				std::cout << "type=" << type << std::endl;
+				if (type != 'a') {
 					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
 				}
-				uint32_t size = (
-					(uint32_t(c->recv_buffer[1]) << 16) | (uint32_t(c->recv_buffer[2]) << 8) | (uint32_t(c->recv_buffer[3]))
-				);
-				if (c->recv_buffer.size() < 4 + size) break; //if whole message isn't here, can't process
+				uint32_t num_players = uint8_t(c->recv_buffer[1]);
+				std::cout << "num_players=" << num_players << std::endl;
+				if (c->recv_buffer.size() < 2 + num_players*2) break; //if whole message isn't here, can't process
 				//whole message *is* here, so set current server message:
-				server_message = std::string(c->recv_buffer.begin() + 4, c->recv_buffer.begin() + 4 + size);
 
+				uint8_t byte_index = 2;
+				for (int k = 0; k < num_players; k++) {
+					uint8_t id = c->recv_buffer[byte_index++];
+					uint8_t name_len = c->recv_buffer[byte_index++];
+					std::string name = std::string(c->recv_buffer.begin()+byte_index, 
+													c->recv_buffer.begin()+byte_index+name_len);
+					std::cout << "[Player " + std::to_string(id) + "] name: " << name << std::endl;
+					auto p = players.find(id);
+					if (p == players.end()) {
+						// add new player to the players map
+						players.emplace(id, 
+										Player(id, name, hex_to_color_vec(player_colors[id]), glm::vec2(0, 0)));
+					}
+					byte_index += name_len;
+				}
 				//and consume this part of the buffer:
-				c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 4 + size);
+				c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 			}
 		}
 	}, 0.0);
@@ -208,33 +224,6 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	// draw the tilemap
 	draw_tiles(vertices);
-
-	// { //use DrawLines to overlay some text:
-	// 	glDisable(GL_DEPTH_TEST);
-	// 	float aspect = float(drawable_size.x) / float(drawable_size.y);
-	// 	DrawLines lines(glm::mat4(
-	// 		1.0f / aspect, 0.0f, 0.0f, 0.0f,
-	// 		0.0f, 1.0f, 0.0f, 0.0f,
-	// 		0.0f, 0.0f, 1.0f, 0.0f,
-	// 		0.0f, 0.0f, 0.0f, 1.0f
-	// 	));
-
-	// 	auto draw_text = [&](glm::vec2 const &at, std::string const &text, float H) {
-	// 		lines.draw_text(text,
-	// 			glm::vec3(at.x, at.y, 0.0),
-	// 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-	// 			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
-	// 		float ofs = 2.0f / drawable_size.y;
-	// 		lines.draw_text(text,
-	// 			glm::vec3(at.x + ofs, at.y + ofs, 0.0),
-	// 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-	// 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
-	// 	};
-
-	// 	draw_text(glm::vec2(-aspect + 0.1f, 0.0f), server_message, 0.09f);
-
-	// 	draw_text(glm::vec2(-aspect + 0.1f,-0.9f), "(press WASD to change your total)", 0.09f);
-	// }
 
 	//compute area that should be visible:
 	glm::vec2 scene_min = glm::vec2(-PADDING, -PADDING);
@@ -362,5 +351,6 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 	for (auto tile : tiles) {
 		draw_rectangle(tile.pos, glm::vec2(TILE_SIZE, TILE_SIZE), tile.color, vertices);
 	}
-	draw_borders(hex_to_color_vec(border_color), vertices);
+	// draw the borders for debugging purposes
+	// draw_borders(hex_to_color_vec(border_color), vertices);
 }

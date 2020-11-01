@@ -28,7 +28,7 @@ struct PlayMode : Mode {
 	const float GRID_H = NUM_ROWS*TILE_SIZE;
 	const float PADDING = 50.0f;
 	
-	const int bg_color = 0x7c6577ff;
+	const int bg_color = 0x404040ff;
 	const int white_color = 0xffffffff;
 	const int base_color = 0xe4ded2ff; // initial color of tiles
 	const int border_color = 0xd5cdd8ff;

@@ -49,12 +49,13 @@ struct PlayMode : Mode {
 	std::vector<Tile> tiles;
 
 	struct Player {
-		Player(uint8_t _id, std::string _name, glm::u8vec4 _color, glm::vec2 _pos):
-				id(_id), name(_name), color(_color), pos(_pos) { }
+		Player(uint8_t _id, std::string _name, glm::u8vec4 _color, uint8_t _row, uint8_t _col):
+				id(_id), name(_name), color(_color), row(_row), col(_col) { }
 		uint8_t id;
 		std::string name;
 		glm::u8vec4 color;
-		glm::vec2 pos;
+		uint8_t row;
+		uint8_t col;
 	};
 	std::unordered_map<uint8_t, Player> players;
 

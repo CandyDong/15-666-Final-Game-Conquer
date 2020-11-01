@@ -193,7 +193,7 @@ void PlayMode::update(float elapsed) {
 				}
 				uint32_t num_players = uint8_t(c->recv_buffer[1]);
 				std::cout << "num_players=" << num_players << std::endl;
-				if (c->recv_buffer.size() < 2 + num_players*2) break; //if whole message isn't here, can't process
+				if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
 				//whole message *is* here, so set current server message:
 
 				uint8_t byte_index = 2;
@@ -202,14 +202,16 @@ void PlayMode::update(float elapsed) {
 					uint8_t name_len = c->recv_buffer[byte_index++];
 					std::string name = std::string(c->recv_buffer.begin()+byte_index, 
 													c->recv_buffer.begin()+byte_index+name_len);
-					std::cout << "[Player " + std::to_string(id) + "] name: " << name << std::endl;
+					byte_index+=name_len;
+					uint8_t row = c->recv_buffer[byte_index++];
+					uint8_t col = c->recv_buffer[byte_index++];
+					std::cout << name << " : (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
 					auto p = players.find(id);
 					if (p == players.end()) {
 						// add new player to the players map
 						players.emplace(id, 
-										Player(id, name, hex_to_color_vec(player_colors[id]), glm::vec2(0, 0)));
+										Player(id, name, hex_to_color_vec(player_colors[id]), row, col));
 					}
-					byte_index += name_len;
 				}
 				//and consume this part of the buffer:
 				c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);

@@ -10,6 +10,12 @@
 #include <unordered_map>
 #include <deque>
 
+// TODO(candy): send these from server to client so that
+// the values does not need to be hardcoded in PlayMode.hpp
+const uint8_t NUM_ROWS = 50;
+const uint8_t NUM_COLS = 80;
+const uint8_t MAX_NUM_PLAYERS = 5;
+
 int main(int argc, char **argv) {
 #ifdef _WIN32
 	//when compiled on windows, unhandled exceptions don't have their message printed, which can make debugging simple issues difficult.
@@ -26,22 +32,31 @@ int main(int argc, char **argv) {
 	//------------ initialization ------------
 
 	Server server(argv[1]);
-
+	srand (time(NULL)); // initialize random seed
 
 	//------------ main loop ------------
 	constexpr float ServerTick = 1.0f / 10.0f; //TODO: set a server tick that makes sense for your game
 
 	//server state:
-	static std::deque<uint32_t> unused_player_ids = {0, 1, 2, 3, 4};
+	static std::deque<uint32_t> unused_player_ids;
+	for (int i = 0; i < MAX_NUM_PLAYERS; i++) {
+		unused_player_ids.emplace_back(i);
+	};
+
 	//per-client state:
 	struct PlayerInfo {
 		PlayerInfo() { 
 			id = unused_player_ids.front();
 			unused_player_ids.pop_front();
 			name = "Player " + std::to_string(id);
+			row = rand() % NUM_ROWS;
+			col = rand() % NUM_COLS;
+			std::cout << name << " connected: (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
 		}
 		std::string name;
-		uint32_t id;
+		uint8_t id;
+		uint8_t row;
+		uint8_t col;
 
 		uint32_t left_presses = 0;
 		uint32_t right_presses = 0;
@@ -132,8 +147,9 @@ int main(int argc, char **argv) {
 				(void)c_prime;
 				c->send(uint8_t(player_prime.id));
 				c->send(uint8_t(player_prime.name.size())); // TODO(candy): make sure length of name is no longer than one byte
-				// std::cout << "name=" << player_prime.name << ", size=" << player_prime.name.size() << std::endl;
 				c->send_buffer.insert(c->send_buffer.end(), player_prime.name.begin(), player_prime.name.end());
+				c->send(uint8_t(player_prime.row));
+				c->send(uint8_t(player_prime.col));
 			}
 		}
 	}

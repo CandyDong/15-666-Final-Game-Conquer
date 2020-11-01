@@ -209,7 +209,7 @@ void PlayMode::update(float elapsed) {
 					std::cout << name << " : (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
 					
 					// add new player to the players map
-					players.emplace_back(id, name, hex_to_color_vec(player_colors[id]), row, col);
+					players.emplace_back(id, name, hex_to_color_vec(player_colors[id]), glm::vec2(row, col));
 				}
 				//and consume this part of the buffer:
 				c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
@@ -359,7 +359,7 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 
 void PlayMode::draw_players(std::vector<Vertex> &vertices) {
 	for (auto player : players) {
-		draw_rectangle(glm::vec2(player.col*TILE_SIZE, player.row*TILE_SIZE),
+		draw_rectangle(glm::vec2(player.pos.y*TILE_SIZE, player.pos.x*TILE_SIZE),
 						glm::vec2(TILE_SIZE, TILE_SIZE),
 						player.color,
 						vertices);

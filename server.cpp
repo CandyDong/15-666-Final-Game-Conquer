@@ -9,9 +9,10 @@
 #include <cassert>
 #include <unordered_map>
 #include <deque>
+#include <glm/glm.hpp>
 
 // TODO(candy): send these from server to client so that
-// the values does not need to be hardcoded in PlayMode.hpp
+// the values do not need to be hardcoded in PlayMode.hpp
 const uint8_t NUM_ROWS = 50;
 const uint8_t NUM_COLS = 80;
 const uint8_t MAX_NUM_PLAYERS = 5;
@@ -42,6 +43,7 @@ int main(int argc, char **argv) {
 	for (int i = 0; i < MAX_NUM_PLAYERS; i++) {
 		unused_player_ids.emplace_back(i);
 	};
+	static std::vector<glm::vec2> init_positions;
 
 	//per-client state:
 	struct PlayerInfo {
@@ -49,21 +51,29 @@ int main(int argc, char **argv) {
 			id = unused_player_ids.front();
 			unused_player_ids.pop_front();
 			name = "Player " + std::to_string(id);
-			row = rand() % NUM_ROWS;
-			col = rand() % NUM_COLS;
+			uint8_t row, col;
+			do {
+				row = rand() % NUM_ROWS;
+				col = rand() % NUM_COLS;
+			} while (std::find(init_positions.begin(), 
+								init_positions.end(), 
+								glm::vec2(row, col)) 
+					!= init_positions.end());
+			init_positions.emplace_back(glm::vec2(row, col));
+			pos = glm::vec2(row, col);
+			trail.emplace_back(pos);
+			
 			std::cout << name << " connected: (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
 		}
 		std::string name;
 		uint8_t id;
-		uint8_t row;
-		uint8_t col;
+		glm::vec2 pos;
+		std::deque<glm::vec2> trail; //stores (row, col), oldest elements first
 
 		uint32_t left_presses = 0;
 		uint32_t right_presses = 0;
 		uint32_t up_presses = 0;
 		uint32_t down_presses = 0;
-
-		int32_t total = 0;
 
 	};
 	std::unordered_map< Connection *, PlayerInfo > players;
@@ -148,8 +158,8 @@ int main(int argc, char **argv) {
 				c->send(uint8_t(player_prime.id));
 				c->send(uint8_t(player_prime.name.size())); // TODO(candy): make sure length of name is no longer than one byte
 				c->send_buffer.insert(c->send_buffer.end(), player_prime.name.begin(), player_prime.name.end());
-				c->send(uint8_t(player_prime.row));
-				c->send(uint8_t(player_prime.col));
+				c->send(uint8_t(player_prime.pos.x));
+				c->send(uint8_t(player_prime.pos.y));
 			}
 		}
 	}

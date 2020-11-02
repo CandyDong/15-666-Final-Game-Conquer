@@ -54,6 +54,7 @@ struct PlayMode : Mode {
 		std::string name;
 		glm::u8vec4 color;
 		glm::vec2 pos;
+		std::vector< glm::vec2 > territory;
 		std::vector< glm::vec2 > trail; //stores (x,y), oldest elements first
 	};
 	std::unordered_map< uint8_t, Player > players;

@@ -205,16 +205,31 @@ void PlayMode::update(float elapsed) {
 					byte_index += name_len;
 					uint8_t row = c->recv_buffer[byte_index++];
 					uint8_t col = c->recv_buffer[byte_index++];
+					glm::vec2 pos = glm::vec2(row, col);
 
 					auto player = players.find(id);
 					if (player == players.end()) {
 						// add new player to the players map
-						Player new_player = { name, hex_to_color_vec(player_colors[id]), glm::vec2(row, col) };
+						Player new_player = { name, hex_to_color_vec(player_colors[id]), pos };
+						new_player.territory.push_back(pos);
 						players.insert({ id, new_player });
 					}
 					else {
-						player->second.pos = glm::vec2(row, col);
-						player->second.trail.push_back(glm::vec2(row, col));
+						// update player's position
+						player->second.pos = pos;
+
+						// when player is at their own territory
+						if (std::find(player->second.territory.begin(), player->second.territory.end(), pos) != player->second.territory.end()) {
+							// update player's territory and clear player's trail
+							player->second.territory.insert(player->second.territory.end(), player->second.trail.begin(), player->second.trail.end());
+							player->second.trail.clear();
+						}
+						// otherwise
+						else {
+							// update player's trail
+							player->second.trail.push_back(pos);
+						}
+
 					}
 					std::cout << name << " : (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
 				}
@@ -366,15 +381,28 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 
 void PlayMode::draw_players(std::vector<Vertex> &vertices) {
 	for (auto& [id, player] : players) {
-		draw_rectangle(glm::vec2(player.pos.y*TILE_SIZE, player.pos.x*TILE_SIZE),
-						glm::vec2(TILE_SIZE, TILE_SIZE),
-						player.color,
-						vertices);
+		// draw trail
 		for (auto& coord : player.trail) {
+			draw_rectangle(glm::vec2(coord.y * TILE_SIZE, coord.x * TILE_SIZE),
+				glm::vec2(TILE_SIZE, TILE_SIZE),
+				glm::u8vec4((255 + player.color.x) / 2, (255 + player.color.y) / 2, (255 + player.color.z) / 2, player.color.a),
+				vertices);
+		}
+		// draw territory
+		for (auto& coord : player.territory) {
 			draw_rectangle(glm::vec2(coord.y * TILE_SIZE, coord.x * TILE_SIZE),
 				glm::vec2(TILE_SIZE, TILE_SIZE),
 				player.color,
 				vertices);
 		}
+		// draw player
+		draw_rectangle(glm::vec2(player.pos.y* TILE_SIZE, player.pos.x* TILE_SIZE),
+			glm::vec2(TILE_SIZE, TILE_SIZE),
+			player.color,
+			vertices);
+		draw_rectangle(glm::vec2(player.pos.y * TILE_SIZE + TILE_SIZE / 4, player.pos.x * TILE_SIZE + TILE_SIZE / 4),
+			glm::vec2(TILE_SIZE/2, TILE_SIZE/2),
+			hex_to_color_vec(white_color),
+			vertices);
 	}
 }

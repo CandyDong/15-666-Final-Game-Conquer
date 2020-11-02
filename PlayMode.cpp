@@ -196,20 +196,27 @@ void PlayMode::update(float elapsed) {
 				if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
 				//whole message *is* here, so set current server message:
 
-				players.clear();
 				uint8_t byte_index = 2;
 				for (uint32_t k = 0; k < num_players; k++) {
 					uint8_t id = c->recv_buffer[byte_index++];
 					uint8_t name_len = c->recv_buffer[byte_index++];
-					std::string name = std::string(c->recv_buffer.begin()+byte_index, 
-													c->recv_buffer.begin()+byte_index+name_len);
-					byte_index+=name_len;
+					std::string name = std::string(c->recv_buffer.begin() + byte_index,
+						c->recv_buffer.begin() + byte_index + name_len);
+					byte_index += name_len;
 					uint8_t row = c->recv_buffer[byte_index++];
 					uint8_t col = c->recv_buffer[byte_index++];
+
+					auto player = players.find(id);
+					if (player == players.end()) {
+						// add new player to the players map
+						Player new_player = { name, hex_to_color_vec(player_colors[id]), glm::vec2(row, col) };
+						players.insert({ id, new_player });
+					}
+					else {
+						player->second.pos = glm::vec2(row, col);
+						player->second.trail.push_back(glm::vec2(row, col));
+					}
 					std::cout << name << " : (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
-					
-					// add new player to the players map
-					players.emplace_back(id, name, hex_to_color_vec(player_colors[id]), glm::vec2(row, col));
 				}
 				//and consume this part of the buffer:
 				c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
@@ -358,10 +365,16 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 }
 
 void PlayMode::draw_players(std::vector<Vertex> &vertices) {
-	for (auto player : players) {
+	for (auto& [id, player] : players) {
 		draw_rectangle(glm::vec2(player.pos.y*TILE_SIZE, player.pos.x*TILE_SIZE),
 						glm::vec2(TILE_SIZE, TILE_SIZE),
 						player.color,
 						vertices);
+		for (auto& coord : player.trail) {
+			draw_rectangle(glm::vec2(coord.y * TILE_SIZE, coord.x * TILE_SIZE),
+				glm::vec2(TILE_SIZE, TILE_SIZE),
+				player.color,
+				vertices);
+		}
 	}
 }

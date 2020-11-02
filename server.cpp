@@ -144,6 +144,7 @@ int main(int argc, char **argv) {
 
 		//update current game state
 		//TODO: replace with *your* game state update
+		// update player position
 		for (auto& [c, player] : players) {
 			if (player.down_presses > player.pos.x + player.up_presses) player.pos.x = 0;
 			else {

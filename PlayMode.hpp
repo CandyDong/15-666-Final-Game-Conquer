@@ -49,15 +49,14 @@ struct PlayMode : Mode {
 	std::vector<Tile> tiles;
 
 	struct Player {
-		Player(uint8_t _id, std::string _name, glm::u8vec4 _color, glm::vec2 _pos):
-				id(_id), name(_name), color(_color), pos(_pos) { }
-		uint8_t id;
+		Player(std::string _name, glm::u8vec4 _color, glm::vec2 _pos):
+				name(_name), color(_color), pos(_pos) { }
 		std::string name;
 		glm::u8vec4 color;
 		glm::vec2 pos;
-		std::deque< glm::vec3 > trail; //stores (x,y,age), oldest elements first
+		std::vector< glm::vec2 > trail; //stores (x,y), oldest elements first
 	};
-	std::vector<Player> players;
+	std::unordered_map< uint8_t, Player > players;
 
 	//input tracking:
 	struct Button {

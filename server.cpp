@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
 	//------------ initialization ------------
 
 	Server server(argv[1]);
-	srand (time(NULL)); // initialize random seed
+	srand ((uint32_t)time(NULL)); // initialize random seed
 
 	//------------ main loop ------------
 	constexpr float ServerTick = 1.0f / 10.0f; //TODO: set a server tick that makes sense for your game
@@ -131,10 +131,10 @@ int main(int argc, char **argv) {
 						uint8_t down_count = c->recv_buffer[3];
 						uint8_t up_count = c->recv_buffer[4];
 
-						player.left_presses += left_count;
-						player.right_presses += right_count;
-						player.down_presses += down_count;
-						player.up_presses += up_count;
+						player.left_presses = left_count;
+						player.right_presses = right_count;
+						player.down_presses = down_count;
+						player.up_presses = up_count;
 
 						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 5);
 					}
@@ -144,6 +144,19 @@ int main(int argc, char **argv) {
 
 		//update current game state
 		//TODO: replace with *your* game state update
+		for (auto& [c, player] : players) {
+			if (player.down_presses > player.pos.x + player.up_presses) player.pos.x = 0;
+			else {
+				player.pos.x = player.pos.x + player.up_presses - player.down_presses;
+				if (player.pos.x >= NUM_ROWS) player.pos.x = NUM_ROWS - 1;
+			}
+
+			if (player.left_presses > player.pos.y + player.right_presses) player.pos.y = 0;
+			else {
+				player.pos.y = player.pos.y + player.right_presses - player.left_presses;
+				if (player.pos.y >= NUM_COLS) player.pos.y = NUM_COLS - 1;
+			}
+		}
 
 		//send updated game state to all clients
 		//TODO: update for your game state

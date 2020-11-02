@@ -198,7 +198,7 @@ void PlayMode::update(float elapsed) {
 
 				players.clear();
 				uint8_t byte_index = 2;
-				for (int k = 0; k < num_players; k++) {
+				for (uint32_t k = 0; k < num_players; k++) {
 					uint8_t id = c->recv_buffer[byte_index++];
 					uint8_t name_len = c->recv_buffer[byte_index++];
 					std::string name = std::string(c->recv_buffer.begin()+byte_index, 

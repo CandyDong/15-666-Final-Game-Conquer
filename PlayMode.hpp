@@ -22,7 +22,7 @@ struct PlayMode : Mode {
 	const uint8_t NUM_ROWS = 50;
 	const uint8_t NUM_COLS = 80;
 	const float TILE_SIZE = 20.0f;
-	const float BORDER_SIZE = 0.1*TILE_SIZE;
+	const float BORDER_SIZE = 0.1f*TILE_SIZE;
 
 	const float GRID_W = NUM_COLS*TILE_SIZE;
 	const float GRID_H = NUM_ROWS*TILE_SIZE;

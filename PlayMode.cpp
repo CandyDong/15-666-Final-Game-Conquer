@@ -209,9 +209,13 @@ void PlayMode::update(float elapsed) {
 
 					auto player = players.find(id);
 					if (player == players.end()) {
-						// add new player to the players map
 						Player new_player = { name, hex_to_color_vec(player_colors[id]), pos };
+
+						// the player's starting position is their initial territory
 						new_player.territory.push_back(pos);
+						tiles[row][col] = player_colors[id];
+
+						// add new player to the players map
 						players.insert({ id, new_player });
 					}
 					else {
@@ -222,12 +226,16 @@ void PlayMode::update(float elapsed) {
 						if (std::find(player->second.territory.begin(), player->second.territory.end(), pos) != player->second.territory.end()) {
 							// update player's territory and clear player's trail
 							player->second.territory.insert(player->second.territory.end(), player->second.trail.begin(), player->second.trail.end());
+							for (auto& trail_pos : player->second.trail) {
+								tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = player_colors[id];
+							}
 							player->second.trail.clear();
 						}
 						// otherwise
 						else {
 							// update player's trail
 							player->second.trail.push_back(pos);
+							tiles[row][col] = trail_colors[id];
 						}
 
 					}
@@ -333,13 +341,12 @@ glm::u8vec4 PlayMode::hex_to_color_vec(int color_hex) {
 }
 
 void PlayMode::init_tiles() {
-	for (int i = 0; i < NUM_ROWS; i++) {
-		for (int j = 0; j < NUM_COLS; j++) {
-			tiles.emplace_back(TileType::EMPTY_TILE, 
-								-1, 
-								glm::vec2(j*TILE_SIZE, i*TILE_SIZE),
-								hex_to_color_vec(base_color));
+	for (int row = 0; row < NUM_ROWS; row++) {
+		std::vector<uint32_t> tile_row;
+		for (int col = 0; col < NUM_COLS; col++) {
+			tile_row.push_back(white_color);
 		}
+		tiles.push_back(tile_row);
 	}
 }
 
@@ -372,8 +379,12 @@ void PlayMode::draw_borders(glm::u8vec4 const &color,
 }
 
 void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
-	for (auto tile : tiles) {
-		draw_rectangle(tile.pos, glm::vec2(TILE_SIZE, TILE_SIZE), tile.color, vertices);
+	for (int row = 0; row < NUM_ROWS; row++) {
+		for (int col = 0; col < NUM_COLS; col++) {
+			draw_rectangle(glm::vec2(col * TILE_SIZE, row * TILE_SIZE),
+						   glm::vec2(TILE_SIZE, TILE_SIZE),
+				           hex_to_color_vec(tiles[row][col]), vertices);
+		}
 	}
 	// draw the borders for debugging purposes
 	// draw_borders(hex_to_color_vec(border_color), vertices);
@@ -381,20 +392,6 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 
 void PlayMode::draw_players(std::vector<Vertex> &vertices) {
 	for (auto& [id, player] : players) {
-		// draw trail
-		for (auto& coord : player.trail) {
-			draw_rectangle(glm::vec2(coord.y * TILE_SIZE, coord.x * TILE_SIZE),
-				glm::vec2(TILE_SIZE, TILE_SIZE),
-				glm::u8vec4((255 + player.color.x) / 2, (255 + player.color.y) / 2, (255 + player.color.z) / 2, player.color.a),
-				vertices);
-		}
-		// draw territory
-		for (auto& coord : player.territory) {
-			draw_rectangle(glm::vec2(coord.y * TILE_SIZE, coord.x * TILE_SIZE),
-				glm::vec2(TILE_SIZE, TILE_SIZE),
-				player.color,
-				vertices);
-		}
 		// draw player
 		draw_rectangle(glm::vec2(player.pos.y* TILE_SIZE, player.pos.x* TILE_SIZE),
 			glm::vec2(TILE_SIZE, TILE_SIZE),

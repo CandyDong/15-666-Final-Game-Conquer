@@ -32,21 +32,23 @@ struct PlayMode : Mode {
 	const int white_color = 0xffffffff;
 	const int base_color = 0xe4ded2ff; // initial color of tiles
 	const int border_color = 0xd5cdd8ff;
-	const std::vector<uint32_t> player_colors{0x390099ff, 0x9e0059ff, 0xff0054ff, 0xff5400ff, 0xffbd00ff};
+	const std::vector<uint32_t> player_colors{ 0x390099ff, 0x9e0059ff, 0xff5400ff, 0xffbd00ff };
+	const std::vector<uint32_t> trail_colors{ 0x8762c5ff, 0xca679fff, 0xffa980ff, 0xffdf83ff };
 
 	enum class TileType {EMPTY_TILE = 0, PLAYER_TILE};
 
 	//----- game state -----
 	//map:
-	struct Tile {
-		Tile(TileType _type, uint8_t _index, glm::vec2 _pos,glm::u8vec4 _color): 
-			type(_type), index(_index), pos(_pos), color(_color) { }
-		TileType type = TileType::EMPTY_TILE;
-		uint8_t index = -1; // always -1 for EMPTY_TILE, player No. for PLAYER_TILE
-		glm::vec2 pos;
-		glm::u8vec4 color; // white for EMPTY_TILE, else the same as player color
-	};
-	std::vector<Tile> tiles;
+	//struct Tile {
+	//	Tile(TileType _type, uint8_t _index, glm::vec2 _pos,glm::u8vec4 _color): 
+	//		type(_type), index(_index), pos(_pos), color(_color) { }
+	//	TileType type = TileType::EMPTY_TILE;
+	//	uint8_t index = -1; // always -1 for EMPTY_TILE, player No. for PLAYER_TILE
+	//	glm::vec2 pos;
+	//	glm::u8vec4 color; // white for EMPTY_TILE, else the same as player color
+	//};
+	//std::vector<Tile> tiles;
+	std::vector<std::vector<uint32_t>> tiles;
 
 	struct Player {
 		Player(std::string _name, glm::u8vec4 _color, glm::vec2 _pos):

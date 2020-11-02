@@ -208,7 +208,7 @@ void PlayMode::update(float elapsed) {
 					glm::vec2 pos = glm::vec2(row, col);
 
 					auto player = players.find(id);
-					if (player == players.end()) {
+					if (player == players.end()) { // new player
 						Player new_player = { name, hex_to_color_vec(player_colors[id]), pos };
 
 						// the player's starting position is their initial territory
@@ -222,8 +222,7 @@ void PlayMode::update(float elapsed) {
 						// update player's position
 						player->second.pos = pos;
 
-						// when player is at their own territory
-						if (std::find(player->second.territory.begin(), player->second.territory.end(), pos) != player->second.territory.end()) {
+						if (tiles[row][col] == player_colors[id]) { // player enters their own territory
 							// update player's territory and clear player's trail
 							player->second.territory.insert(player->second.territory.end(), player->second.trail.begin(), player->second.trail.end());
 							for (auto& trail_pos : player->second.trail) {
@@ -231,7 +230,16 @@ void PlayMode::update(float elapsed) {
 							}
 							player->second.trail.clear();
 						}
-						// otherwise
+						else if (tiles[row][col] == trail_colors[id]) { // player hits their own trail
+							// nothing happens
+						}
+						else if (tiles[row][col] != white_color) { // player hits other player's trail or territory
+							// clear player's trail
+							for (auto& trail_pos : player->second.trail) {
+								tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
+							}
+							player->second.trail.clear();
+						}
 						else {
 							// update player's trail
 							player->second.trail.push_back(pos);

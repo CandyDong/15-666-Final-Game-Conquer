@@ -15,7 +15,7 @@
 // the values do not need to be hardcoded in PlayMode.hpp
 const uint8_t NUM_ROWS = 50;
 const uint8_t NUM_COLS = 80;
-const uint8_t MAX_NUM_PLAYERS = 5;
+const uint8_t MAX_NUM_PLAYERS = 4;
 
 int main(int argc, char **argv) {
 #ifdef _WIN32

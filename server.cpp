@@ -94,8 +94,11 @@ int main(int argc, char **argv) {
 					if (unused_player_ids.empty()) { // server is full
 						c->close();
 					} else {
-						//create some player info for them:
+						// create some player info for them:
 						players.emplace(c, PlayerInfo());
+						// send player id
+						c->send('i');
+						c->send(players.at(c).id);
 					}
 				} else if (evt == Connection::OnClose) {
 					//client disconnected:

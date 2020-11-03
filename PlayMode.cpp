@@ -188,69 +188,72 @@ void PlayMode::update(float elapsed) {
 						<< hex_dump(c->recv_buffer); std::cout.flush();
 				char type = c->recv_buffer[0];
 				std::cout << "type=" << type << std::endl;
-				if (type != 'a') {
-					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
-				}
-				uint32_t num_players = uint8_t(c->recv_buffer[1]);
-				std::cout << "num_players=" << num_players << std::endl;
-				if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
-				//whole message *is* here, so set current server message:
+				if (type == 'a') {
+					uint32_t num_players = uint8_t(c->recv_buffer[1]);
+					std::cout << "num_players=" << num_players << std::endl;
+					if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
+					//whole message *is* here, so set current server message:
 
-				uint8_t byte_index = 2;
-				for (uint32_t k = 0; k < num_players; k++) {
-					uint8_t id = c->recv_buffer[byte_index++];
-					uint8_t name_len = c->recv_buffer[byte_index++];
-					std::string name = std::string(c->recv_buffer.begin() + byte_index,
-						c->recv_buffer.begin() + byte_index + name_len);
-					byte_index += name_len;
-					uint8_t row = c->recv_buffer[byte_index++];
-					uint8_t col = c->recv_buffer[byte_index++];
-					glm::vec2 pos = glm::vec2(row, col);
+					uint8_t byte_index = 2;
+					for (uint32_t k = 0; k < num_players; k++) {
+						uint8_t id = c->recv_buffer[byte_index++];
+						uint8_t name_len = c->recv_buffer[byte_index++];
+						std::string name = std::string(c->recv_buffer.begin() + byte_index,
+							c->recv_buffer.begin() + byte_index + name_len);
+						byte_index += name_len;
+						uint8_t row = c->recv_buffer[byte_index++];
+						uint8_t col = c->recv_buffer[byte_index++];
+						glm::vec2 pos = glm::vec2(row, col);
 
-					auto player = players.find(id);
-					if (player == players.end()) { // new player
-						Player new_player = { name, hex_to_color_vec(player_colors[id]), pos };
+						auto player = players.find(id);
+						if (player == players.end()) { // new player
+							Player new_player = { name, hex_to_color_vec(player_colors[id]), pos };
 
-						// the player's starting position is their initial territory
-						new_player.territory.push_back(pos);
-						tiles[row][col] = player_colors[id];
+							// the player's starting position is their initial territory
+							new_player.territory.push_back(pos);
+							tiles[row][col] = player_colors[id];
 
-						// add new player to the players map
-						players.insert({ id, new_player });
-					}
-					else {
-						// update player's position
-						player->second.pos = pos;
-
-						if (tiles[row][col] == player_colors[id]) { // player enters their own territory
-							// update player's territory and clear player's trail
-							player->second.territory.insert(player->second.territory.end(), player->second.trail.begin(), player->second.trail.end());
-							for (auto& trail_pos : player->second.trail) {
-								tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = player_colors[id];
-							}
-							player->second.trail.clear();
-						}
-						else if (tiles[row][col] == trail_colors[id]) { // player hits their own trail
-							// nothing happens
-						}
-						else if (tiles[row][col] != white_color) { // player hits other player's trail or territory
-							// clear player's trail
-							for (auto& trail_pos : player->second.trail) {
-								tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
-							}
-							player->second.trail.clear();
+							// add new player to the players map
+							players.insert({ id, new_player });
 						}
 						else {
-							// update player's trail
-							player->second.trail.push_back(pos);
-							tiles[row][col] = trail_colors[id];
-						}
+							// update player's position
+							player->second.pos = pos;
 
+							if (tiles[row][col] == player_colors[id]) { // player enters their own territory
+								// update player's territory and clear player's trail
+								player->second.territory.insert(player->second.territory.end(), player->second.trail.begin(), player->second.trail.end());
+								for (auto& trail_pos : player->second.trail) {
+									tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = player_colors[id];
+								}
+								player->second.trail.clear();
+							}
+							else if (tiles[row][col] == trail_colors[id]) { // player hits their own trail
+								// nothing happens
+							}
+							else if (tiles[row][col] != white_color) { // player hits other player's trail or territory
+								// clear player's trail
+								for (auto& trail_pos : player->second.trail) {
+									tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
+								}
+								player->second.trail.clear();
+							}
+							else {
+								// update player's trail
+								player->second.trail.push_back(pos);
+								tiles[row][col] = trail_colors[id];
+							}
+						}
 					}
-					std::cout << name << " : (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
+					//and consume this part of the buffer:
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 				}
-				//and consume this part of the buffer:
-				c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
+				else if (type == 'i') {
+					uint8_t local_id = c->recv_buffer[1];
+				}
+				else {
+					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
+				}
 			}
 		}
 	}, 0.0);

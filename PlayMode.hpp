@@ -70,6 +70,8 @@ struct PlayMode : Mode {
 	//connection to server:
 	Client &client;
 
+	uint8_t local_id;
+
 	// ----- texture ------
 	GLuint vertex_buffer = 0;
 	GLuint vertex_buffer_for_color_texture_program = 0;

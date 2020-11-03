@@ -118,36 +118,32 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		if (evt.key.repeat) {
 			//ignore repeats
 		} else if (evt.key.keysym.sym == SDLK_a) {
-			left.downs += 1;
-			left.pressed = true;
+			if (dir != right) {
+				dir = left;
+				send_update = true;
+			}
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.downs += 1;
-			right.pressed = true;
+			if (dir != left) {
+				dir = right;
+				send_update = true;
+			}
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.downs += 1;
-			up.pressed = true;
+			if (dir != down) {
+				dir = up;
+				send_update = true;
+			}
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.downs += 1;
-			down.pressed = true;
+			if (dir != up) {
+				dir = down;
+				send_update = true;
+			}
 			return true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
-		if (evt.key.keysym.sym == SDLK_a) {
-			left.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.pressed = false;
-			return true;
-		}
+		// do nothing
 	}
 
 	return false;
@@ -157,20 +153,16 @@ void PlayMode::update(float elapsed) {
 
 	//queue data for sending to server:
 	//TODO: send something that makes sense for your game
-	if (left.downs || right.downs || down.downs || up.downs) {
+	if (send_update) {
 		//send a five-byte message of type 'b':
 		client.connections.back().send('b');
-		client.connections.back().send(left.downs);
-		client.connections.back().send(right.downs);
-		client.connections.back().send(down.downs);
-		client.connections.back().send(up.downs);
-	}
+		client.connections.back().send((uint8_t)dir);
 
-	//reset button press counters:
-	left.downs = 0;
-	right.downs = 0;
-	up.downs = 0;
-	down.downs = 0;
+		send_update = false;
+		/*client.connections.back().send(right.downs);
+		client.connections.back().send(down.downs);
+		client.connections.back().send(up.downs);*/
+	}
 
 	//send/receive data:
 	client.poll([this](Connection *c, Connection::Event event){
@@ -250,6 +242,7 @@ void PlayMode::update(float elapsed) {
 				}
 				else if (type == 'i') {
 					uint8_t local_id = c->recv_buffer[1];
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
 				else {
 					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");

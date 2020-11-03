@@ -61,16 +61,18 @@ struct PlayMode : Mode {
 	};
 	std::unordered_map< uint8_t, Player > players;
 
-	//input tracking:
-	struct Button {
-		uint8_t downs = 0;
-		uint8_t pressed = 0;
-	} left, right, down, up;
+	// player's direction
+	enum Dir { left, right, up, down, none };
+	Dir dir = none;
+
+	// id of local player
+	uint8_t local_id;
 
 	//connection to server:
 	Client &client;
 
-	uint8_t local_id;
+	// flag when to send update to server
+	bool send_update = false;
 
 	// ----- texture ------
 	GLuint vertex_buffer = 0;

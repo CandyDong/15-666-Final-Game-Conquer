@@ -70,11 +70,7 @@ int main(int argc, char **argv) {
 		glm::vec2 pos;
 		std::deque<glm::vec2> trail; //stores (row, col), oldest elements first
 
-		uint32_t left_presses = 0;
-		uint32_t right_presses = 0;
-		uint32_t up_presses = 0;
-		uint32_t down_presses = 0;
-
+		uint8_t dir;
 	};
 	std::unordered_map< Connection *, PlayerInfo > players;
 
@@ -90,6 +86,7 @@ int main(int argc, char **argv) {
 			}
 			server.poll([&](Connection *c, Connection::Event evt){
 				if (evt == Connection::OnOpen) {
+					std::cout << "connected" << '\n';
 					//client connected:
 					if (unused_player_ids.empty()) { // server is full
 						c->close();
@@ -110,6 +107,7 @@ int main(int argc, char **argv) {
 					players.erase(f);
 
 				} else { assert(evt == Connection::OnRecv);
+				std::cout << "receiving" << '\n';
 					//got data from client:
 					std::cout << "got bytes:\n" << hex_dump(c->recv_buffer); std::cout.flush();
 
@@ -120,8 +118,8 @@ int main(int argc, char **argv) {
 
 					//handle messages from client:
 					//TODO: update for the sorts of messages your clients send
-					while (c->recv_buffer.size() >= 5) {
-						//expecting five-byte messages 'b' (left count) (right count) (down count) (up count)
+					while (c->recv_buffer.size() >= 2) {
+						//expecting two-byte messages 'b' (dir)
 						char type = c->recv_buffer[0];
 						if (type != 'b') {
 							std::cout << " message of non-'b' type received from client!" << std::endl;
@@ -129,17 +127,17 @@ int main(int argc, char **argv) {
 							c->close();
 							return;
 						}
-						uint8_t left_count = c->recv_buffer[1];
-						uint8_t right_count = c->recv_buffer[2];
+						player.dir = c->recv_buffer[1];
+						/*uint8_t right_count = c->recv_buffer[2];
 						uint8_t down_count = c->recv_buffer[3];
 						uint8_t up_count = c->recv_buffer[4];
 
 						player.left_presses = left_count;
 						player.right_presses = right_count;
 						player.down_presses = down_count;
-						player.up_presses = up_count;
+						player.up_presses = up_count;*/
 
-						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 5);
+						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 					}
 				}
 			}, remain);
@@ -149,16 +147,17 @@ int main(int argc, char **argv) {
 		//TODO: replace with *your* game state update
 		// update player position
 		for (auto& [c, player] : players) {
-			if (player.down_presses > player.pos.x + player.up_presses) player.pos.x = 0;
-			else {
-				player.pos.x = player.pos.x + player.up_presses - player.down_presses;
-				if (player.pos.x >= NUM_ROWS) player.pos.x = NUM_ROWS - 1;
+			if (player.dir == 0 && player.pos.y > 0) {
+				player.pos.y--;
 			}
-
-			if (player.left_presses > player.pos.y + player.right_presses) player.pos.y = 0;
-			else {
-				player.pos.y = player.pos.y + player.right_presses - player.left_presses;
-				if (player.pos.y >= NUM_COLS) player.pos.y = NUM_COLS - 1;
+			else if (player.dir == 1 && player.pos.y < NUM_COLS - 1) {
+				player.pos.y++;
+			}
+			else if (player.dir == 2 && player.pos.x < NUM_ROWS - 1) {
+				player.pos.x++;
+			}
+			else if (player.dir == 3 && player.pos.x > 0) {
+				player.pos.x--;
 			}
 		}
 

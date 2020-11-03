@@ -229,6 +229,10 @@ void PlayMode::update(float elapsed) {
 									tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
 								}
 								player->second.trail.clear();
+
+								// player stops moving
+								dir = none;
+								send_update = true;
 							}
 							else {
 								// update player's trail

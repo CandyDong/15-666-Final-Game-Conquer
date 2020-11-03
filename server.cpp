@@ -147,6 +147,7 @@ int main(int argc, char **argv) {
 		//TODO: replace with *your* game state update
 		// update player position
 		for (auto& [c, player] : players) {
+			(void)c;
 			if (player.dir == 0 && player.pos.y > 0) {
 				player.pos.y--;
 			}

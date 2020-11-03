@@ -245,7 +245,7 @@ void PlayMode::update(float elapsed) {
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 				}
 				else if (type == 'i') {
-					uint8_t local_id = c->recv_buffer[1];
+					// uint8_t local_id = c->recv_buffer[1];
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
 				else {

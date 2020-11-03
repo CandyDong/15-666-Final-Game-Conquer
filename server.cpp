@@ -136,6 +136,8 @@ int main(int argc, char **argv) {
 						player.down_presses = down_count;
 						player.up_presses = up_count;
 
+						std::cout << "player left presses: " + std::to_string(left_count) << std::endl;
+
 						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 5);
 					}
 				}

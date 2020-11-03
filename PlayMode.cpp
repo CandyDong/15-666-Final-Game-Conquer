@@ -118,36 +118,32 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		if (evt.key.repeat) {
 			//ignore repeats
 		} else if (evt.key.keysym.sym == SDLK_a) {
-			left.downs += 1;
-			left.pressed = true;
+			if (dir != right) {
+				dir = left;
+				send_update = true;
+			}
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.downs += 1;
-			right.pressed = true;
+			if (dir != left) {
+				dir = right;
+				send_update = true;
+			}
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.downs += 1;
-			up.pressed = true;
+			if (dir != down) {
+				dir = up;
+				send_update = true;
+			}
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.downs += 1;
-			down.pressed = true;
+			if (dir != up) {
+				dir = down;
+				send_update = true;
+			}
 			return true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
-		if (evt.key.keysym.sym == SDLK_a) {
-			left.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.pressed = false;
-			return true;
-		}
+		// do nothing
 	}
 
 	return false;
@@ -157,20 +153,16 @@ void PlayMode::update(float elapsed) {
 
 	//queue data for sending to server:
 	//TODO: send something that makes sense for your game
-	if (left.downs || right.downs || down.downs || up.downs) {
+	if (send_update) {
 		//send a five-byte message of type 'b':
 		client.connections.back().send('b');
-		client.connections.back().send(left.downs);
-		client.connections.back().send(right.downs);
-		client.connections.back().send(down.downs);
-		client.connections.back().send(up.downs);
-	}
+		client.connections.back().send((uint8_t)dir);
 
-	//reset button press counters:
-	left.downs = 0;
-	right.downs = 0;
-	up.downs = 0;
-	down.downs = 0;
+		send_update = false;
+		/*client.connections.back().send(right.downs);
+		client.connections.back().send(down.downs);
+		client.connections.back().send(up.downs);*/
+	}
 
 	//send/receive data:
 	client.poll([this](Connection *c, Connection::Event event){
@@ -188,69 +180,77 @@ void PlayMode::update(float elapsed) {
 						<< hex_dump(c->recv_buffer); std::cout.flush();
 				char type = c->recv_buffer[0];
 				std::cout << "type=" << type << std::endl;
-				if (type != 'a') {
-					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
-				}
-				uint32_t num_players = uint8_t(c->recv_buffer[1]);
-				std::cout << "num_players=" << num_players << std::endl;
-				if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
-				//whole message *is* here, so set current server message:
+				if (type == 'a') {
+					uint32_t num_players = uint8_t(c->recv_buffer[1]);
+					std::cout << "num_players=" << num_players << std::endl;
+					if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
+					//whole message *is* here, so set current server message:
 
-				uint8_t byte_index = 2;
-				for (uint32_t k = 0; k < num_players; k++) {
-					uint8_t id = c->recv_buffer[byte_index++];
-					uint8_t name_len = c->recv_buffer[byte_index++];
-					std::string name = std::string(c->recv_buffer.begin() + byte_index,
-						c->recv_buffer.begin() + byte_index + name_len);
-					byte_index += name_len;
-					uint8_t row = c->recv_buffer[byte_index++];
-					uint8_t col = c->recv_buffer[byte_index++];
-					glm::vec2 pos = glm::vec2(row, col);
+					uint8_t byte_index = 2;
+					for (uint32_t k = 0; k < num_players; k++) {
+						uint8_t id = c->recv_buffer[byte_index++];
+						uint8_t name_len = c->recv_buffer[byte_index++];
+						std::string name = std::string(c->recv_buffer.begin() + byte_index,
+							c->recv_buffer.begin() + byte_index + name_len);
+						byte_index += name_len;
+						uint8_t row = c->recv_buffer[byte_index++];
+						uint8_t col = c->recv_buffer[byte_index++];
+						glm::vec2 pos = glm::vec2(row, col);
 
-					auto player = players.find(id);
-					if (player == players.end()) { // new player
-						Player new_player = { name, hex_to_color_vec(player_colors[id]), pos };
+						auto player = players.find(id);
+						if (player == players.end()) { // new player
+							Player new_player = { name, hex_to_color_vec(player_colors[id]), pos };
 
-						// the player's starting position is their initial territory
-						new_player.territory.push_back(pos);
-						tiles[row][col] = player_colors[id];
+							// the player's starting position is their initial territory
+							new_player.territory.push_back(pos);
+							tiles[row][col] = player_colors[id];
 
-						// add new player to the players map
-						players.insert({ id, new_player });
-					}
-					else {
-						// update player's position
-						player->second.pos = pos;
-
-						if (tiles[row][col] == player_colors[id]) { // player enters their own territory
-							// update player's territory and clear player's trail
-							player->second.territory.insert(player->second.territory.end(), player->second.trail.begin(), player->second.trail.end());
-							for (auto& trail_pos : player->second.trail) {
-								tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = player_colors[id];
-							}
-							player->second.trail.clear();
-						}
-						else if (tiles[row][col] == trail_colors[id]) { // player hits their own trail
-							// nothing happens
-						}
-						else if (tiles[row][col] != white_color) { // player hits other player's trail or territory
-							// clear player's trail
-							for (auto& trail_pos : player->second.trail) {
-								tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
-							}
-							player->second.trail.clear();
+							// add new player to the players map
+							players.insert({ id, new_player });
 						}
 						else {
-							// update player's trail
-							player->second.trail.push_back(pos);
-							tiles[row][col] = trail_colors[id];
-						}
+							// update player's position
+							player->second.pos = pos;
 
+							if (tiles[row][col] == player_colors[id]) { // player enters their own territory
+								// update player's territory and clear player's trail
+								player->second.territory.insert(player->second.territory.end(), player->second.trail.begin(), player->second.trail.end());
+								for (auto& trail_pos : player->second.trail) {
+									tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = player_colors[id];
+								}
+								player->second.trail.clear();
+							}
+							else if (tiles[row][col] == trail_colors[id]) { // player hits their own trail
+								// nothing happens
+							}
+							else if (tiles[row][col] != white_color) { // player hits other player's trail or territory
+								// clear player's trail
+								for (auto& trail_pos : player->second.trail) {
+									tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
+								}
+								player->second.trail.clear();
+
+								// player stops moving
+								dir = none;
+								send_update = true;
+							}
+							else {
+								// update player's trail
+								player->second.trail.push_back(pos);
+								tiles[row][col] = trail_colors[id];
+							}
+						}
 					}
-					std::cout << name << " : (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
+					//and consume this part of the buffer:
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 				}
-				//and consume this part of the buffer:
-				c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
+				else if (type == 'i') {
+					uint8_t local_id = c->recv_buffer[1];
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
+				}
+				else {
+					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
+				}
 			}
 		}
 	}, 0.0);

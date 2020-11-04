@@ -3,11 +3,13 @@
 #include "Connection.hpp"
 
 #include <glm/glm.hpp>
+#include <glm/gtx/hash.hpp>
 #include "GL.hpp"
 
 #include <vector>
 #include <deque>
 #include <unordered_map>
+#include <set>
 
 struct PlayMode : Mode {
 	PlayMode(Client &client);
@@ -101,5 +103,7 @@ struct PlayMode : Mode {
 
 	void draw_tiles(std::vector<Vertex> &vertices);
 	void draw_players(std::vector<Vertex> &vertices);
-	
+	std::vector< glm::vec2 > shortest_path(glm::vec2 const &start, glm::vec2 const &end, std::set< uint32_t > const &allowed_tiles);
+	void floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color);
+	void fill_interior(std::vector<glm::vec2> territory);
 };

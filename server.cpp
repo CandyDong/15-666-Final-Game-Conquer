@@ -51,19 +51,19 @@ int main(int argc, char **argv) {
 			id = unused_player_ids.front();
 			unused_player_ids.pop_front();
 			name = "Player " + std::to_string(id);
-			uint8_t row, col;
+			uint8_t x, y;
 			do {
-				row = rand() % NUM_ROWS;
-				col = rand() % NUM_COLS;
+				x = rand() % NUM_COLS;
+				y = rand() % NUM_ROWS;
 			} while (std::find(init_positions.begin(), 
 								init_positions.end(), 
-								glm::vec2(row, col)) 
+								glm::vec2(x, y)) 
 					!= init_positions.end());
-			init_positions.emplace_back(glm::vec2(row, col));
-			pos = glm::vec2(row, col);
+			init_positions.emplace_back(glm::vec2(x, y));
+			pos = glm::vec2(x, y);
 			trail.emplace_back(pos);
 			
-			std::cout << name << " connected: (" + std::to_string(row) + ", " + std::to_string(col) + ");" << std::endl;
+			std::cout << name << " connected: (" + std::to_string(x) + ", " + std::to_string(y) + ");" << std::endl;
 		}
 		std::string name;
 		uint8_t id;
@@ -148,17 +148,17 @@ int main(int argc, char **argv) {
 		// update player position
 		for (auto& [c, player] : players) {
 			(void)c;
-			if (player.dir == 0 && player.pos.y > 0) {
-				player.pos.y--;
+			if (player.dir == 0 && player.pos.x > 0) {
+				player.pos.x--;
 			}
-			else if (player.dir == 1 && player.pos.y < NUM_COLS - 1) {
-				player.pos.y++;
-			}
-			else if (player.dir == 2 && player.pos.x < NUM_ROWS - 1) {
+			else if (player.dir == 1 && player.pos.x < NUM_COLS - 1) {
 				player.pos.x++;
 			}
-			else if (player.dir == 3 && player.pos.x > 0) {
-				player.pos.x--;
+			else if (player.dir == 2 && player.pos.y < NUM_ROWS - 1) {
+				player.pos.y++;
+			}
+			else if (player.dir == 3 && player.pos.y > 0) {
+				player.pos.y--;
 			}
 		}
 

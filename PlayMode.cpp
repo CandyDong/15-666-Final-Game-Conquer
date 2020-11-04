@@ -168,7 +168,7 @@ void PlayMode::update(float elapsed) {
 	//send/receive data:
 	client.poll([this](Connection *c, Connection::Event event){
 		if (event == Connection::OnOpen) {
-			//std::cout << "[" << c->socket << "] opened" << std::endl;
+			std::cout << "[" << c->socket << "] opened" << std::endl;
 		} else if (event == Connection::OnClose) {
 			//std::cout << "[" << c->socket << "] closed (!)" << std::endl;
 			throw std::runtime_error("Lost connection to server!");
@@ -179,10 +179,10 @@ void PlayMode::update(float elapsed) {
 				//std::cout << "[" << c->socket << "] recv'd data of size " << c->recv_buffer.size() << ". Current buffer:\n" << hex_dump(c->recv_buffer);
 				//std::cout.flush();
 				char type = c->recv_buffer[0];
-				//std::cout << "type=" << type << std::endl;
+				// std::cout << "type=" << type << std::endl;
 				if (type == 'a') {
 					uint32_t num_players = uint8_t(c->recv_buffer[1]);
-					//std::cout << "num_players=" << num_players << std::endl;
+					// std::cout << "num_players=" << num_players << std::endl;
 					if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
 					//whole message *is* here, so set current server message:
 
@@ -200,11 +200,6 @@ void PlayMode::update(float elapsed) {
 						auto player = players.find(id);
 						if (player == players.end()) { // new player
 							Player new_player = { name, hex_to_color_vec(player_colors[id]), pos };
-
-							// the player's starting position is their initial territory
-							new_player.territory.push_back(pos);
-							tiles[x][y] = player_colors[id];
-
 							// add new player to the players map
 							players.insert({ id, new_player });
 						}
@@ -214,17 +209,32 @@ void PlayMode::update(float elapsed) {
 							p->pos = pos;
 
 							if (tiles[x][y] == player_colors[id]) { // player enters their own territory
-								// update player's territory and clear player's trail
-								p->territory.insert(p->territory.end(), p->trail.begin(), p->trail.end());
-								for (auto& trail_pos : p->trail) {
-									tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = player_colors[id];
-								}
-								p->trail.clear();
+								// check if the trail and the territory can form an enclosed loop
+								if (p->trail.size() >= 1) {
+									std::set<uint32_t> allowed_tiles;
+									allowed_tiles.insert(player_colors[id]); // color of the territory
 
-								fill_interior(p->territory);
+									// set the oldest tile in the trail to be the color of the territory
+									tiles[(uint32_t) p->trail.front().first.x][(uint32_t) p->trail.front().first.y] = player_colors[id];
+									try {
+										shortest_path(pos, p->trail[0].first, allowed_tiles);
+										// path does exist
+										// update player's territory and clear player's trail
+										for (auto& trail : p->trail) {
+											glm::vec2 trail_pos = trail.first;
+											p->territory.insert(p->territory.end(), trail_pos);
+											tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = player_colors[id];
+										}
+										fill_interior(p->territory);
+									} catch (std::exception& e) {
+										std::cout << e.what() << std::endl;
+										clear_trail(p->trail, white_color);
+									}	
+									p->trail.clear();
+								}
 							}
 							else if (tiles[x][y] == trail_colors[id]) { // player hits their own trail
-								if (p->trail.back() == pos) {} // we've hit a wall, do nothing
+								if (p->trail.back().first == pos) {} // we've hit a wall, do nothing
 								else {
 									std::vector<glm::vec2> loop; // find the shortest loop that we have formed
 
@@ -233,16 +243,14 @@ void PlayMode::update(float elapsed) {
 									allowed_tiles.insert(trail_colors[id]);
 
 									// disconnect loop and find shortest path
-									tiles[(uint32_t) p->trail.back().x][(uint32_t) p->trail.back().y] = white_color;
-									std::vector<glm::vec2> path = shortest_path(p->trail[p->trail.size() - 2], pos, allowed_tiles);
+									tiles[(uint32_t) p->trail.back().first.x][(uint32_t) p->trail.back().first.y] = white_color;
+									std::vector<glm::vec2> path = shortest_path(p->trail[p->trail.size() - 2].first, pos, allowed_tiles);
 									loop.insert(loop.end(), path.begin(), path.end());
 									// reconnect loop
-									loop.push_back(p->trail.back());
+									loop.push_back(p->trail.back().first);
 
 									// clear player's trail
-									for (auto& trail_pos : p->trail) {
-										tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
-									}
+									clear_trail(p->trail, white_color);
 									p->trail.clear();
 
 									// add loop to territory
@@ -256,9 +264,7 @@ void PlayMode::update(float elapsed) {
 							}
 							else if (tiles[x][y] != white_color) { // player hits other player's trail or territory
 								// clear player's trail
-								for (auto& trail_pos : p->trail) {
-									tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
-								}
+								clear_trail(p->trail, white_color);
 								p->trail.clear();
 
 								// player stops moving
@@ -267,16 +273,16 @@ void PlayMode::update(float elapsed) {
 							}
 							else {
 								// update player's trail
-								p->trail.push_back(pos);
+								p->trail.emplace_back(std::make_pair(pos, 0.0f));
 								tiles[x][y] = trail_colors[id];
 							}
 						}
 					}
 					//and consume this part of the buffer:
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
-				}
-				else if (type == 'i') {
-					// uint8_t local_id = c->recv_buffer[1];
+				} else if (type == 'i') {
+					local_id = c->recv_buffer[1];
+					std::cout << "type=" << type << ", local_id=" + std::to_string(local_id) <<std::endl;
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
 				else {
@@ -285,15 +291,34 @@ void PlayMode::update(float elapsed) {
 			}
 		}
 	}, 0.0);
+
+	auto player = players.find(local_id);
+	if (player == players.end()) {
+		return;
+	}
+	Player *local_player = &player->second;
+	//age up all locations in the trail:
+	for (auto& trail : local_player->trail) {
+		trail.second += elapsed;
+	}
+
+	//trim any too-old locations from back of trail:
+	// TODO (candy): size check on 1 or 2?
+	while (local_player->trail.size() >= 1 && local_player->trail.at(0).second > TRAIL_MAX_AGE) {
+		glm::vec2 trail_pos = local_player->trail.front().first;
+		tiles[trail_pos.x][trail_pos.y] = white_color;
+		local_player->trail.pop_front();
+	}
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	//vertices will be accumulated into this list and then uploaded+drawn at the end of this function:
 	std::vector< Vertex > vertices;
 
-	// draw the tilemap
 	draw_tiles(vertices);
-	// draw the players
+	// draw the borders for debugging purposes
+	// draw_borders(hex_to_color_vec(border_color), vertices);
+	draw_trails(vertices);
 	draw_players(vertices);
 
 	//compute area that should be visible:
@@ -425,8 +450,20 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 				           hex_to_color_vec(tiles[x][y]), vertices);
 		}
 	}
-	// draw the borders for debugging purposes
-	// draw_borders(hex_to_color_vec(border_color), vertices);
+}
+
+void PlayMode::draw_trails(std::vector<Vertex> &vertices) {
+	auto player = players.find(local_id);
+	if (player == players.end()) {
+		return;
+	}
+	Player *local_player = &player->second;
+	for (auto trail : local_player->trail) {
+		glm::vec2 trail_pos = trail.first;
+		draw_rectangle(glm::vec2(trail_pos.x * TILE_SIZE, trail_pos.y * TILE_SIZE),
+						   glm::vec2(TILE_SIZE, TILE_SIZE),
+				           hex_to_color_vec(trail_colors[local_id]), vertices);
+	}
 }
 
 void PlayMode::draw_players(std::vector<Vertex> &vertices) {
@@ -442,6 +479,15 @@ void PlayMode::draw_players(std::vector<Vertex> &vertices) {
 			vertices);
 	}
 }
+
+// set the color of all tiles on the trail
+void PlayMode::clear_trail(std::deque< std::pair<glm::vec2, float> > trail, uint32_t color) {
+	for (auto& t : trail) {
+		glm::vec2 trail_pos = t.first;
+		tiles[(uint8_t)trail_pos.x][(uint8_t)trail_pos.y] = white_color;
+	}
+}
+
 
 // shortest path using Dijkstra's algorithm (will throw error if no path exists)
 std::vector< glm::vec2 > PlayMode::shortest_path(glm::vec2 const &start, glm::vec2 const &end, std::set< uint32_t > const &allowed_tiles) {
@@ -512,7 +558,9 @@ std::vector< glm::vec2 > PlayMode::shortest_path(glm::vec2 const &start, glm::ve
 	while (pos != start) {
 		shortest_path.push_back(pos);
 		std::cout << pos.x << ", " << pos.y << std::endl;
-		assert(prev.find(pos) != prev.end()); // assert that there exists a path
+		if (prev.find(pos) == prev.end()) {
+			throw std::runtime_error("No path exists");
+		}
 		pos = prev.at(pos);
 	}
 	shortest_path.push_back(start);

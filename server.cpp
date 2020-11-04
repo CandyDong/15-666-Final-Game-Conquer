@@ -61,14 +61,12 @@ int main(int argc, char **argv) {
 					!= init_positions.end());
 			init_positions.emplace_back(glm::vec2(x, y));
 			pos = glm::vec2(x, y);
-			trail.emplace_back(pos);
 			
 			std::cout << name << " connected: (" + std::to_string(x) + ", " + std::to_string(y) + ");" << std::endl;
 		}
 		std::string name;
 		uint8_t id;
 		glm::vec2 pos;
-		std::deque<glm::vec2> trail; //stores (row, col), oldest elements first
 
 		uint8_t dir;
 	};
@@ -93,13 +91,12 @@ int main(int argc, char **argv) {
 					} else {
 						// create some player info for them:
 						players.emplace(c, PlayerInfo());
-						// send player id
+						// send over the corresponding player id
 						c->send('i');
 						c->send(players.at(c).id);
 					}
 				} else if (evt == Connection::OnClose) {
 					//client disconnected:
-
 					//remove them from the players list:
 					auto f = players.find(c);
 					assert(f != players.end());
@@ -107,7 +104,7 @@ int main(int argc, char **argv) {
 					players.erase(f);
 
 				} else { assert(evt == Connection::OnRecv);
-				std::cout << "receiving" << '\n';
+					std::cout << "receiving" << '\n';
 					//got data from client:
 					std::cout << "got bytes:\n" << hex_dump(c->recv_buffer); std::cout.flush();
 
@@ -144,7 +141,6 @@ int main(int argc, char **argv) {
 		}
 
 		//update current game state
-		//TODO: replace with *your* game state update
 		// update player position
 		for (auto& [c, player] : players) {
 			(void)c;
@@ -163,7 +159,6 @@ int main(int argc, char **argv) {
 		}
 
 		//send updated game state to all clients
-		//TODO: update for your game state
 		for (auto &[c, player] : players) {
 			(void)player; //work around "unused variable" warning on whatever g++ github actions uses
 			//send an update starting with 'm', a 24-bit size, and a blob of text:

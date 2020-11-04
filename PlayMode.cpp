@@ -222,6 +222,8 @@ void PlayMode::update(float elapsed) {
 								p->trail.clear();
 
 								fill_interior(p->territory);
+								recalculate_territory();
+								recalculate_trails();
 							}
 							else if (tiles[x][y] == trail_colors[id]) { // player hits their own trail
 								if (p->trail.back() == pos) {} // we've hit a wall, do nothing
@@ -252,6 +254,8 @@ void PlayMode::update(float elapsed) {
 									}
 
 									fill_interior(p->territory);
+									recalculate_territory();
+									recalculate_trails();
 								}
 							}
 							else if (tiles[x][y] != white_color) { // player hits other player's trail or territory
@@ -565,6 +569,42 @@ void PlayMode::fill_interior(std::vector<glm::vec2> territory) {
 			for (int y = 0; y < NUM_ROWS + 2; y++) {
 				if (tiles_copy[x][y] == EMPTY && x - 1 >= 0 && y - 1 >= 0 && x - 1 < NUM_COLS && y - 1 < NUM_ROWS)
 					tiles[x-1][y-1] = territory_color;
+			}
+		}
+	}
+}
+
+// rebuild each player's territory vector based on the tile grid
+void PlayMode::recalculate_territory() {
+	for (auto &[id, player] : players) {
+		(void) id; // avoid unused variable
+		player.territory.clear();
+	}
+
+	for (int x = 0; x < NUM_COLS; x++) {
+		for (int y = 0; y < NUM_ROWS; y++) {
+			for (int i = 0; i < player_colors.size(); i++) {
+				if (tiles[x][y] == player_colors[i]) {
+					players.at(i).territory.push_back(glm::vec2(x, y));
+				}
+			}
+		}
+	}
+}
+
+// rebuild each player's trail vector based on the tile grid
+void PlayMode::recalculate_trails() {
+	for (auto &[id, player] : players) {
+		(void) id; // avoid unused variable
+		player.trail.clear();
+	}
+
+	for (int x = 0; x < NUM_COLS; x++) {
+		for (int y = 0; y < NUM_ROWS; y++) {
+			for (int i = 0; i < trail_colors.size(); i++) {
+				if (tiles[x][y] == trail_colors[i]) {
+					players.at(i).trail.push_back(glm::vec2(x, y));
+				}
 			}
 		}
 	}

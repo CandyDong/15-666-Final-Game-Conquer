@@ -88,8 +88,8 @@ struct PlayMode : Mode {
 	void recv_territory(std::vector< char > buffer, size_t &start, std::vector< glm::uvec2 > &territory);
 	void recv_trail(std::vector< char > buffer, size_t &start, std::deque< std::pair<glm::uvec2, float> > &trail);
 	size_t get_packet_size(Connection *c, Player local_player);
-	uint8_t get_nth_byte(uint8_t n, uint32_t num);
-	void send_uint32(Connection *c, uint32_t num);
+	uint8_t get_nth_byte(uint8_t n, size_t num);
+	void send_uint32(Connection *c, size_t num);
 	void send_vector(Connection *c, std::vector< glm::uvec2 > data);
 
 	void draw_rectangle(glm::vec2 const &pos, 
@@ -104,9 +104,12 @@ struct PlayMode : Mode {
 	void update_tiles();
 	void update_trails(std::deque< std::pair<glm::uvec2, float> > trail, uint32_t color);
 	void update_territory(std::vector< glm::uvec2 > territory, uint32_t color);
+	void update_scores();
+
 	std::vector< glm::uvec2 > shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector< glm::uvec2 > const &allowed_tiles);
 	void floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color);
 	void fill_interior(std::vector<glm::uvec2> &territory);
+
 	// void recalculate_territory();
 	// void recalculate_trails();
 };

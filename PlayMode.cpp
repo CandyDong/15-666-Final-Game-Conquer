@@ -168,10 +168,11 @@ void PlayMode::update(float elapsed) {
 		Player *local_player = &player->second;
 		glm::uvec2 pos = local_player->pos;
 
-		if (left.pressed && pos.x > 0) { pos.x--; }
+		// check on 1 to avoid windows signed/unsigned mismatch error
+		if (left.pressed && pos.x >= 1) { pos.x--; }
 		else if (right.pressed && pos.x < NUM_COLS - 1) { pos.x++; }
 		else if (up.pressed && pos.y < NUM_ROWS - 1) { pos.y++; }
-		else if (down.pressed && pos.y > 0) { pos.y--; }
+		else if (down.pressed && pos.y >= 1) { pos.y--; }
 
 		// std::cout << "new position: " + glm::to_string(pos) + ", prev position: " + 
 		// 		glm::to_string(local_player->pos) << std::endl;
@@ -499,11 +500,11 @@ size_t PlayMode::get_packet_size(Connection *c, Player local_player) {
 	return total_size;
 }
 
-uint8_t PlayMode::get_nth_byte(uint8_t n, uint32_t num) {
+uint8_t PlayMode::get_nth_byte(uint8_t n, size_t num) {
 	return uint8_t((num >> (8*n)) & 0xff);
 }
 
-void PlayMode::send_uint32(Connection *c, uint32_t num) {
+void PlayMode::send_uint32(Connection *c, size_t num) {
 	c->send(get_nth_byte(3, num));
 	c->send(get_nth_byte(2, num));
 	c->send(get_nth_byte(1, num));

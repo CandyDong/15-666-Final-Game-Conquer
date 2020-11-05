@@ -53,8 +53,8 @@ struct PlayerInfo {
 static std::unordered_map< Connection *, PlayerInfo > players;
 
 void send_vector(Connection *c, std::vector< glm::uvec2 > data);
-void send_uint32(Connection *c, uint32_t num);
-uint8_t get_nth_byte(uint8_t n, uint32_t num);
+void send_uint32(Connection *c, size_t num);
+uint8_t get_nth_byte(uint8_t n, size_t num);
 size_t get_packet_size(Connection *c, std::unordered_map< Connection *, PlayerInfo > players);
 void send_on_update(std::unordered_map< Connection *, PlayerInfo > players);
 void send_on_new_connection(Connection *c, std::unordered_map< Connection *, PlayerInfo > players);
@@ -236,11 +236,11 @@ size_t get_packet_size(Connection *c, std::unordered_map< Connection *, PlayerIn
 	return total_size;
 }
 
-uint8_t get_nth_byte(uint8_t n, uint32_t num) {
+uint8_t get_nth_byte(uint8_t n, size_t num) {
 	return uint8_t((num >> (8*n)) & 0xff);
 }
 
-void send_uint32(Connection *c, uint32_t num) {
+void send_uint32(Connection *c, size_t num) {
 	c->send(get_nth_byte(3, num));
 	c->send(get_nth_byte(2, num));
 	c->send(get_nth_byte(1, num));

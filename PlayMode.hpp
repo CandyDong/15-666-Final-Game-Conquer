@@ -42,20 +42,22 @@ struct PlayMode : Mode {
 	std::vector<std::vector<uint32_t>> tiles;
 
 	struct Player {
-		Player(std::string _name, glm::u8vec4 _color, glm::vec2 _pos):
-				name(_name), color(_color), pos(_pos) { }
-		std::string name;
-		glm::u8vec4 color;
-		glm::vec2 pos;
-		std::vector< glm::vec2 > territory;
-		std::deque< std::pair<glm::vec2, float> > trail; //stores (x,y), age, oldest elements first
+		Player(uint8_t _id, uint32_t _color, glm::uvec2 _pos):
+				id(_id), color(_color), pos(_pos) { }
+		uint8_t id;
+		uint32_t color;
+		glm::uvec2 pos;
+		std::vector< glm::uvec2 > territory;
+		std::deque< std::pair<glm::uvec2, float> > trail; //stores (x,y), age, oldest elements first
 	};
 	std::unordered_map< uint8_t, Player > players;
-	uint8_t local_id; // player id corresponding to this connection
+	uint8_t local_id;// player corresponding to this connection
 
-	// player's direction
-	enum Dir { left, right, up, down, none };
-	Dir dir = none;
+	//input tracking:
+	struct Button {
+		uint8_t downs = 0;
+		uint8_t pressed = 0;
+	} left, right, down, up;
 
 	//connection to server:
 	Client &client;
@@ -81,6 +83,15 @@ struct PlayMode : Mode {
 	// ------ helpers -------
 	glm::u8vec4 hex_to_color_vec(int color_hex);
 	void init_tiles();
+
+	void recv_uint32(std::vector< char > buffer, size_t &start, size_t &result);
+	void recv_territory(std::vector< char > buffer, size_t &start, std::vector< glm::uvec2 > &territory);
+	void recv_trail(std::vector< char > buffer, size_t &start, std::deque< std::pair<glm::uvec2, float> > &trail);
+	size_t get_packet_size(Connection *c, Player local_player);
+	uint8_t get_nth_byte(uint8_t n, uint32_t num);
+	void send_uint32(Connection *c, uint32_t num);
+	void send_vector(Connection *c, std::vector< glm::uvec2 > data);
+
 	void draw_rectangle(glm::vec2 const &pos, 
                         	glm::vec2 const &size, 
                         	glm::u8vec4 const &color, 
@@ -89,10 +100,13 @@ struct PlayMode : Mode {
 					std::vector<Vertex> &vertices);
 
 	void draw_tiles(std::vector<Vertex> &vertices);
-	void draw_players(std::vector<Vertex> &vertices);
-	void draw_trails(std::vector<Vertex> &vertices);
-	void clear_trail(std::deque< std::pair<glm::vec2, float> > trail, uint32_t color);
-	std::vector< glm::vec2 > shortest_path(glm::vec2 const &start, glm::vec2 const &end, std::set< uint32_t > const &allowed_tiles);
+
+	void update_tiles();
+	void update_trails(std::deque< std::pair<glm::uvec2, float> > trail, uint32_t color);
+	void update_territory(std::vector< glm::uvec2 > territory, uint32_t color);
+	std::vector< glm::uvec2 > shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector< glm::uvec2 > const &allowed_tiles);
 	void floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color);
-	void fill_interior(std::vector<glm::vec2> territory);
+	void fill_interior(std::vector<glm::uvec2> &territory);
+	// void recalculate_territory();
+	// void recalculate_trails();
 };

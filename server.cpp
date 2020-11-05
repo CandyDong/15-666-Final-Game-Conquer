@@ -11,11 +11,56 @@
 #include <deque>
 #include <glm/glm.hpp>
 
-// TODO(candy): send these from server to client so that
-// the values do not need to be hardcoded in PlayMode.hpp
 const uint8_t NUM_ROWS = 50;
 const uint8_t NUM_COLS = 80;
 const uint8_t MAX_NUM_PLAYERS = 4;
+
+//server state:
+static std::deque<uint32_t> unused_player_ids;
+static std::vector<glm::uvec2> init_positions;
+
+static bool state_updated = false;
+
+//per-client state:
+struct PlayerInfo {
+	PlayerInfo() { 
+		id = unused_player_ids.front();
+		unused_player_ids.pop_front();
+		name = "Player " + std::to_string(id);
+		uint8_t x, y;
+		do {
+			x = rand() % NUM_COLS;
+			y = rand() % NUM_ROWS;
+		} while (std::find(init_positions.begin(), 
+							init_positions.end(), 
+							glm::uvec2(x, y)) 
+				!= init_positions.end());
+		init_positions.emplace_back(glm::uvec2(x, y));
+		pos = glm::uvec2(x, y);
+		trail.emplace_back(glm::uvec2(x, y));
+		
+		std::cout << name << " connected: (" + std::to_string(x) + ", " + std::to_string(y) + ");" << std::endl;
+	}
+	std::string name;
+	uint8_t id;
+	uint8_t dir;
+	glm::uvec2 pos;
+
+	std::vector< glm::uvec2 > territory;
+	std::vector< glm::uvec2 > trail; //stores (x,y), oldest elements first
+};
+
+static std::unordered_map< Connection *, PlayerInfo > players;
+
+void send_vector(Connection *c, std::vector< glm::uvec2 > data);
+void send_uint32(Connection *c, uint32_t num);
+uint8_t get_nth_byte(uint8_t n, uint32_t num);
+size_t get_packet_size(Connection *c, std::unordered_map< Connection *, PlayerInfo > players);
+void send_on_update(std::unordered_map< Connection *, PlayerInfo > players);
+void send_on_new_connection(Connection *c, std::unordered_map< Connection *, PlayerInfo > players);
+void recv_uint32(std::vector< char > buffer, size_t &start, size_t &result);
+void recv_vector(std::vector< char > buffer, size_t &start, std::vector< glm::uvec2 > &data);
+
 
 int main(int argc, char **argv) {
 #ifdef _WIN32
@@ -38,39 +83,9 @@ int main(int argc, char **argv) {
 	//------------ main loop ------------
 	constexpr float ServerTick = 1.0f / 10.0f; //TODO: set a server tick that makes sense for your game
 
-	//server state:
-	static std::deque<uint32_t> unused_player_ids;
 	for (int i = 0; i < MAX_NUM_PLAYERS; i++) {
 		unused_player_ids.emplace_back(i);
 	};
-	static std::vector<glm::vec2> init_positions;
-
-	//per-client state:
-	struct PlayerInfo {
-		PlayerInfo() { 
-			id = unused_player_ids.front();
-			unused_player_ids.pop_front();
-			name = "Player " + std::to_string(id);
-			uint8_t x, y;
-			do {
-				x = rand() % NUM_COLS;
-				y = rand() % NUM_ROWS;
-			} while (std::find(init_positions.begin(), 
-								init_positions.end(), 
-								glm::vec2(x, y)) 
-					!= init_positions.end());
-			init_positions.emplace_back(glm::vec2(x, y));
-			pos = glm::vec2(x, y);
-			
-			std::cout << name << " connected: (" + std::to_string(x) + ", " + std::to_string(y) + ");" << std::endl;
-		}
-		std::string name;
-		uint8_t id;
-		glm::vec2 pos;
-
-		uint8_t dir;
-	};
-	std::unordered_map< Connection *, PlayerInfo > players;
 
 	while (true) {
 		static auto next_tick = std::chrono::steady_clock::now() + std::chrono::duration< double >(ServerTick);
@@ -91,9 +106,8 @@ int main(int argc, char **argv) {
 					} else {
 						// create some player info for them:
 						players.emplace(c, PlayerInfo());
-						// send over the corresponding player id
-						c->send('i');
-						c->send(players.at(c).id);
+						send_on_new_connection(c, players);
+						state_updated = true;
 					}
 				} else if (evt == Connection::OnClose) {
 					//client disconnected:
@@ -102,21 +116,21 @@ int main(int argc, char **argv) {
 					assert(f != players.end());
 					unused_player_ids.emplace_back(f->second.id);
 					players.erase(f);
+					state_updated = true;
 
 				} else { assert(evt == Connection::OnRecv);
-					std::cout << "receiving" << '\n';
 					//got data from client:
-					std::cout << "got bytes:\n" << hex_dump(c->recv_buffer); std::cout.flush();
-
+					// std::cout << "[" << c->socket << "] recv'd data of size " << c->recv_buffer.size() << ". Current buffer:\n" << hex_dump(c->recv_buffer);
+					// std::cout.flush();
 					//look up in players list:
 					auto f = players.find(c);
 					assert(f != players.end());
 					PlayerInfo &player = f->second;
+					player.territory.clear();
+					player.trail.clear();
 
 					//handle messages from client:
-					//TODO: update for the sorts of messages your clients send
-					while (c->recv_buffer.size() >= 2) {
-						//expecting two-byte messages 'b' (dir)
+					while (c->recv_buffer.size() >= 5) {
 						char type = c->recv_buffer[0];
 						if (type != 'b') {
 							std::cout << " message of non-'b' type received from client!" << std::endl;
@@ -124,55 +138,34 @@ int main(int argc, char **argv) {
 							c->close();
 							return;
 						}
-						player.dir = c->recv_buffer[1];
-						/*uint8_t right_count = c->recv_buffer[2];
-						uint8_t down_count = c->recv_buffer[3];
-						uint8_t up_count = c->recv_buffer[4];
-
-						player.left_presses = left_count;
-						player.right_presses = right_count;
-						player.down_presses = down_count;
-						player.up_presses = up_count;*/
-
-						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
+						size_t byte_index = 1;
+						size_t packet_size;
+						recv_uint32(c->recv_buffer, byte_index, packet_size);
+						// std::cout << "packet size=" + std::to_string(packet_size) << std::endl;
+						if (c->recv_buffer.size() < 5+packet_size) break; //if whole message isn't here, can't process
+						//whole message *is* here, so set current server message:
+						size_t x; size_t y;
+						recv_uint32(c->recv_buffer, byte_index, x);
+						recv_uint32(c->recv_buffer, byte_index, y);
+						player.pos = glm::uvec2(x, y);
+						recv_vector(c->recv_buffer, byte_index, player.territory);
+						recv_vector(c->recv_buffer, byte_index, player.trail);
+						assert(byte_index == packet_size+5);
+						//and consume this part of the buffer:
+						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 					}
+					state_updated = true;
 				}
 			}, remain);
 		}
 
 		//update current game state
 		// update player position
-		for (auto& [c, player] : players) {
-			(void)c;
-			if (player.dir == 0 && player.pos.x > 0) {
-				player.pos.x--;
-			}
-			else if (player.dir == 1 && player.pos.x < NUM_COLS - 1) {
-				player.pos.x++;
-			}
-			else if (player.dir == 2 && player.pos.y < NUM_ROWS - 1) {
-				player.pos.y++;
-			}
-			else if (player.dir == 3 && player.pos.y > 0) {
-				player.pos.y--;
-			}
-		}
 
 		//send updated game state to all clients
-		for (auto &[c, player] : players) {
-			(void)player; //work around "unused variable" warning on whatever g++ github actions uses
-			//send an update starting with 'm', a 24-bit size, and a blob of text:
-			c->send('a');
-			c->send(uint8_t(players.size()));
-			// send along all player info
-			for (auto &[c_prime, player_prime] : players) {
-				(void)c_prime;
-				c->send(uint8_t(player_prime.id));
-				c->send(uint8_t(player_prime.name.size())); // TODO(candy): make sure length of name is no longer than one byte
-				c->send_buffer.insert(c->send_buffer.end(), player_prime.name.begin(), player_prime.name.end());
-				c->send(uint8_t(player_prime.pos.x));
-				c->send(uint8_t(player_prime.pos.y));
-			}
+		if (state_updated) {
+			send_on_update(players);
+			state_updated = false;
 		}
 	}
 	return 0;
@@ -186,4 +179,98 @@ int main(int argc, char **argv) {
 		throw;
 	}
 #endif
+}
+
+void send_on_new_connection(Connection *c, std::unordered_map< Connection *, PlayerInfo > players) {
+	// send over the corresponding player id
+	c->send('i');
+	c->send(players.at(c).id);
+	send_uint32(c, players.at(c).pos.x);
+	send_uint32(c, players.at(c).pos.y);
+}
+
+void send_on_update(std::unordered_map< Connection *, PlayerInfo > players) {
+	if (players.size() <= 1) {
+		return;
+	}
+
+	for (auto &[c, player] : players) {
+		(void)player; //work around "unused variable" warning on whatever g++ github actions uses
+		c->send('u');
+		size_t packet_size = get_packet_size(c, players);
+		send_uint32(c, packet_size);// total packet size
+		// std::cout << "[" + std::to_string(player.id) + 
+		// 			"] sending a total packet of size " + std::to_string(packet_size) << std::endl;
+		// send along all player info
+		for (auto &[c_prime, player_prime] : players) {
+			if (c_prime == c) {
+				// std::cout << "do not send duplicate info since client knows it's own state" << std::endl;
+				continue;
+			}
+			(void)c_prime;
+			c->send(uint8_t(player_prime.id)); // 1 byte
+			send_uint32(c, player_prime.pos.x);
+			send_uint32(c, player_prime.pos.y);
+			// send territory
+			send_vector(c, player_prime.territory); // 4 bytes for size + (size*8)-byte of data
+			// send trail (the last element in the trail is the player's current location)
+			send_vector(c, player_prime.trail); // 4 bytes for size + (size*8)-byte of data
+		}
+	}
+}
+
+size_t get_packet_size(Connection *c, std::unordered_map< Connection *, PlayerInfo > players) {
+	size_t total_size = 0;
+	for (auto &[c_prime, player_prime] : players) {
+		if (c_prime == c) {
+			continue;
+		}
+		(void)c_prime;
+		total_size += 1; // id
+		total_size += 8; // pos
+		total_size += 4;
+		total_size += 8*(player_prime.territory.size());
+		total_size += 4;
+		total_size += 8*(player_prime.trail.size());
+	}
+	return total_size;
+}
+
+uint8_t get_nth_byte(uint8_t n, uint32_t num) {
+	return uint8_t((num >> (8*n)) & 0xff);
+}
+
+void send_uint32(Connection *c, uint32_t num) {
+	c->send(get_nth_byte(3, num));
+	c->send(get_nth_byte(2, num));
+	c->send(get_nth_byte(1, num));
+	c->send(get_nth_byte(0, num));
+}
+
+void send_vector(Connection *c, std::vector< glm::uvec2 > data) {
+	send_uint32(c, data.size());
+	for (auto &vec : data) {
+		send_uint32(c, vec.x);
+		send_uint32(c, vec.y);
+	}
+}
+
+void recv_uint32(std::vector< char > buffer, size_t &start, size_t &result) {
+	result = uint32_t(((buffer[start] & 0xff) << 24) | 
+						((buffer[start+1] & 0xff) << 16) | 
+						((buffer[start+2] & 0xff) << 8) | 
+						(buffer[start+3] & 0xff));
+	start += 4;
+}
+
+void recv_vector(std::vector< char > buffer, size_t &start, std::vector< glm::uvec2 > &data) {
+	size_t data_size;
+	recv_uint32(buffer, start, data_size);
+	for (int i = 0; i < data_size; i++) {
+		size_t x;
+		recv_uint32(buffer, start, x);
+		size_t y;
+		recv_uint32(buffer, start, y);
+		data.emplace_back(glm::uvec2(x, y));
+	}
 }

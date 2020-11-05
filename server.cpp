@@ -14,6 +14,8 @@
 const uint8_t NUM_ROWS = 50;
 const uint8_t NUM_COLS = 80;
 const uint8_t MAX_NUM_PLAYERS = 4;
+const size_t TOTAL_AREA = NUM_ROWS*NUM_COLS;
+const size_t WIN_THRESHOLD = size_t(0.5f*TOTAL_AREA);
 
 //server state:
 static std::deque<uint32_t> unused_player_ids;
@@ -51,6 +53,9 @@ struct PlayerInfo {
 };
 
 static std::unordered_map< Connection *, PlayerInfo > players;
+static uint8_t winner_id;
+static size_t winner_score = 0;
+static bool GAME_OVER = false;
 
 void send_vector(Connection *c, std::vector< glm::uvec2 > data);
 void send_uint32(Connection *c, size_t num);
@@ -58,8 +63,11 @@ uint8_t get_nth_byte(uint8_t n, size_t num);
 size_t get_packet_size(Connection *c, std::unordered_map< Connection *, PlayerInfo > players);
 void send_on_update(std::unordered_map< Connection *, PlayerInfo > players);
 void send_on_new_connection(Connection *c, std::unordered_map< Connection *, PlayerInfo > players);
+void send_on_game_over(std::unordered_map< Connection *, PlayerInfo > players);
 void recv_uint32(std::vector< char > buffer, size_t &start, size_t &result);
 void recv_vector(std::vector< char > buffer, size_t &start, std::vector< glm::uvec2 > &data);
+
+void calculate_scores(std::unordered_map< Connection *, PlayerInfo > players);
 
 
 int main(int argc, char **argv) {
@@ -101,6 +109,9 @@ int main(int argc, char **argv) {
 				if (evt == Connection::OnOpen) {
 					std::cout << "connected" << '\n';
 					//client connected:
+					if (GAME_OVER) {
+						c->close();
+					}
 					if (unused_player_ids.empty()) { // server is full
 						c->close();
 					} else {
@@ -155,14 +166,18 @@ int main(int argc, char **argv) {
 						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 					}
 					state_updated = true;
+					calculate_scores(players);
 				}
 			}, remain);
 		}
 
-		//update current game state
-		// update player position
-
 		//send updated game state to all clients
+		if (GAME_OVER) {
+			send_on_game_over(players);
+			state_updated = false;
+			GAME_OVER = false;
+		}
+
 		if (state_updated) {
 			send_on_update(players);
 			state_updated = false;
@@ -187,6 +202,16 @@ void send_on_new_connection(Connection *c, std::unordered_map< Connection *, Pla
 	c->send(players.at(c).id);
 	send_uint32(c, players.at(c).pos.x);
 	send_uint32(c, players.at(c).pos.y);
+}
+
+void send_on_game_over(std::unordered_map< Connection *, PlayerInfo > players) {
+	std::cout << "GAME OVER" << std::endl;
+	// send over the corresponding player id
+	for (auto &[c, player] : players) {
+		c->send('g');
+		c->send(winner_id);
+		send_uint32(c, winner_score);
+	}
 }
 
 void send_on_update(std::unordered_map< Connection *, PlayerInfo > players) {
@@ -272,5 +297,18 @@ void recv_vector(std::vector< char > buffer, size_t &start, std::vector< glm::uv
 		size_t y;
 		recv_uint32(buffer, start, y);
 		data.emplace_back(glm::uvec2(x, y));
+	}
+}
+
+void calculate_scores(std::unordered_map< Connection *, PlayerInfo > players) {
+	for (auto &[c, player] : players) {
+		(void)c;
+		if (player.territory.size() > winner_score) {
+			winner_score = player.territory.size();
+			winner_id = player.id;
+		}
+	}
+	if (winner_score > WIN_THRESHOLD) {
+		GAME_OVER = true;
 	}
 }

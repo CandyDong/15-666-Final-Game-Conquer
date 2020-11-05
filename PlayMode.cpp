@@ -163,6 +163,10 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 }
 
 void PlayMode::update(float elapsed) {
+	if (GAME_OVER) {
+		return;
+	}
+
 	auto player = players.find(local_id);
 	if (player != players.end()) { // new player
 		Player *local_player = &player->second;
@@ -170,8 +174,8 @@ void PlayMode::update(float elapsed) {
 
 		// check on 1 to avoid windows signed/unsigned mismatch error
 		if (left.pressed && pos.x >= 1) { pos.x--; }
-		else if (right.pressed && pos.x < NUM_COLS - 1) { pos.x++; }
-		else if (up.pressed && pos.y < NUM_ROWS - 1) { pos.y++; }
+		else if (right.pressed && pos.x < uint32_t(NUM_COLS - 1)) { pos.x++; }
+		else if (up.pressed && pos.y < uint32_t(NUM_ROWS - 1)) { pos.y++; }
 		else if (down.pressed && pos.y >= 1) { pos.y--; }
 
 		// std::cout << "new position: " + glm::to_string(pos) + ", prev position: " + 
@@ -317,6 +321,7 @@ void PlayMode::update(float elapsed) {
 			//expecting message(s): 'u' + 4-byte [packet_size]
 			while (c->recv_buffer.size() >= 5) {
 				char type = c->recv_buffer[0];
+				std::cout << "Type=" << type << std::endl;
 				if (type == 'u') {
 					size_t byte_index = 1;
 					size_t packet_size;
@@ -352,8 +357,6 @@ void PlayMode::update(float elapsed) {
 					//and consume this part of the buffer:
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 				} else if (type == 'i') {
-					std::cout.flush();
-
 					local_id = c->recv_buffer[1];
 					size_t start = 2; size_t x; size_t y;
 					recv_uint32(c->recv_buffer, start, x);
@@ -365,6 +368,14 @@ void PlayMode::update(float elapsed) {
 					std::cout << "local_id=" + std::to_string(local_id) + 
 								", pos=" + glm::to_string(glm::uvec2(x, y)) << std::endl;
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + start);
+				} else if (type == 'g') {
+					GAME_OVER = true;
+					size_t byte_index = 1;
+					winner_id = c->recv_buffer[byte_index++];
+					recv_uint32(c->recv_buffer, byte_index, winner_score);
+					std::cout << "winner_id=" + std::to_string(winner_id) + 
+								", score=" + std::to_string(winner_score) << std::endl;
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 				}
 				else {
 					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
@@ -405,6 +416,11 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
 		glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
 	);
+
+	if (GAME_OVER) {
+		//TODO :use DrawLines to overlay some text
+
+	}
 	//NOTE: glm matrices are specified in *Column-Major* order,
 	// so each line above is specifying a *column* of the matrix(!)
 

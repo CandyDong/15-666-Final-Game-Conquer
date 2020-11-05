@@ -39,6 +39,10 @@ struct PlayMode : Mode {
 	const std::vector<uint32_t> trail_colors{ 0x8762c5ff, 0xca679fff, 0xffa980ff, 0xffdf83ff };
 
 	//----- game state -----
+	bool GAME_OVER = false;
+	uint8_t winner_id;
+	size_t winner_score = 0;
+
 	std::vector<std::vector<uint32_t>> tiles;
 
 	struct Player {
@@ -104,7 +108,6 @@ struct PlayMode : Mode {
 	void update_tiles();
 	void update_trails(std::deque< std::pair<glm::uvec2, float> > trail, uint32_t color);
 	void update_territory(std::vector< glm::uvec2 > territory, uint32_t color);
-	void update_scores();
 
 	std::vector< glm::uvec2 > shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector< glm::uvec2 > const &allowed_tiles);
 	void floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color);

@@ -205,6 +205,7 @@ void PlayMode::update(float elapsed) {
 				local_player->trail.clear();
 
 				fill_interior(local_player->territory);
+
 				// // check if the trail and the territory can form an enclosed loop
 				// if (local_player->trail.size() >= 1) {
 				// 	std::vector<glm::uvec2> allowed_tiles = {pos};
@@ -598,9 +599,12 @@ void PlayMode::update_tiles() {
 	}
 	for (auto p : players) {
 		Player player = p.second;
-		tiles[player.pos.x][player.pos.y] = player_colors[player.id];
 		update_trails(player.trail, trail_colors[player.id]);
 		update_territory(player.territory, player_colors[player.id]);
+	}
+	for (auto p : players) {
+		Player player = p.second;
+		tiles[player.pos.x][player.pos.y] = player_colors[player.id];
 	}
 }
 
@@ -747,14 +751,14 @@ void PlayMode::fill_interior(std::vector<glm::uvec2> &territory) {
 					if (std::find(territory.begin(), territory.end(), pos) == territory.end()) {
 						territory.emplace_back(pos);
 
-						auto old_player_color = std::find(player_colors.begin(), player_colors.end(), tiles[x][y]);
-						if (old_player_color != player_colors.end()) { // if region contains territory of another player
-							int old_player_id = (int)(old_player_color - player_colors.begin());
-							std::cout << old_player_id << '\n';
-							auto old_territory = std::find(players.at(old_player_id).territory.begin(), players.at(old_player_id).territory.end(), glm::uvec2(x, y));
-							if (old_territory != players.at(old_player_id).territory.end()) {
-								std::cout << "hello" << '\n';
-								players.at(old_player_id).territory.erase(old_territory);
+						if (tiles[x][y] != player_colors[local_id]) {
+							auto old_player_color = std::find(player_colors.begin(), player_colors.end(), tiles[x][y]);
+							if (old_player_color != player_colors.end()) { // if region contains territory of another player
+								int old_player_id = (int)(old_player_color - player_colors.begin());
+								auto old_territory = std::find(players.at(old_player_id).territory.begin(), players.at(old_player_id).territory.end(), glm::uvec2(x, y));
+								if (old_territory != players.at(old_player_id).territory.end()) {
+									players.at(old_player_id).territory.erase(old_territory);
+								}
 							}
 						}
 					}

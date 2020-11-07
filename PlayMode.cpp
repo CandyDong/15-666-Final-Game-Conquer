@@ -337,7 +337,13 @@ void PlayMode::create_player(uint8_t id, glm::uvec2 pos) {
 }
 
 void PlayMode::update_player(Player* p, glm::uvec2 pos) {
-	if (p->pos == pos) return;
+	if (p->pos == pos) {
+		if (p->trail.size() > 1) {
+			tiles[(uint8_t)p->trail[0].first.x][(uint8_t)p->trail[0].first.y] = white_color;
+			p->trail.pop_front();
+		}
+		return;
+	}
 
 	uint8_t x = pos.x;
 	uint8_t y = pos.y;
@@ -395,7 +401,7 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 	else if (tiles[x][y] != white_color) { // player hits other player's trail or territory
 		// clear player's trail
 		for (auto t : p->trail) {
-			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = player_colors[id];
+			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = white_color;
 		}
 		p->trail.clear();
 	}
@@ -405,10 +411,18 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 		tiles[x][y] = trail_colors[id];
 	}
 
-	//trim any too-old locations from back of trail:
+	// trim any too-old locations from back of trail:
 	while (p->trail.size() > TRAIL_MAX_LEN) {
 		tiles[(uint8_t)p->trail[0].first.x][(uint8_t)p->trail[0].first.y] = white_color;
 		p->trail.pop_front();
+	}
+
+	// game over
+	if (p->territory.size() > NUM_COLS * NUM_ROWS / 2) {
+		GAME_OVER = true;
+		winner_id = id;
+		winner_score = p->territory.size();
+		std::cout << "game over" << ' ' << (int)winner_id << ' ' << winner_score << '\n';
 	}
 }
 

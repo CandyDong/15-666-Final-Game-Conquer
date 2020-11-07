@@ -25,7 +25,7 @@ struct PlayMode : Mode {
 	const uint8_t NUM_COLS = 80;
 	const float TILE_SIZE = 20.0f;
 	const float BORDER_SIZE = 0.1f*TILE_SIZE;
-	const float TRAIL_MAX_AGE = 2.0f;
+	const uint8_t TRAIL_MAX_LEN = 50;
 
 	const float GRID_W = NUM_COLS*TILE_SIZE;
 	const float GRID_H = NUM_ROWS*TILE_SIZE;
@@ -57,11 +57,9 @@ struct PlayMode : Mode {
 	std::unordered_map< uint8_t, Player > players;
 	uint8_t local_id;// player corresponding to this connection
 
-	//input tracking:
-	struct Button {
-		uint8_t downs = 0;
-		uint8_t pressed = 0;
-	} left, right, down, up;
+	// player's direction
+	enum Dir { left, right, up, down, none };
+	Dir dir = none;
 
 	//connection to server:
 	Client &client;
@@ -88,13 +86,8 @@ struct PlayMode : Mode {
 	glm::u8vec4 hex_to_color_vec(int color_hex);
 	void init_tiles();
 
-	void recv_uint32(std::vector< char > buffer, size_t &start, size_t &result);
-	void recv_territory(std::vector< char > buffer, size_t &start, std::vector< glm::uvec2 > &territory);
-	void recv_trail(std::vector< char > buffer, size_t &start, std::deque< std::pair<glm::uvec2, float> > &trail);
-	size_t get_packet_size(Connection *c, Player local_player);
-	uint8_t get_nth_byte(uint8_t n, size_t num);
-	void send_uint32(Connection *c, size_t num);
-	void send_vector(Connection *c, std::vector< glm::uvec2 > data);
+	void create_player(uint8_t id, glm::uvec2 pos);
+	void update_player(Player* p, glm::uvec2 pos);
 
 	void draw_rectangle(glm::vec2 const &pos, 
                         	glm::vec2 const &size, 
@@ -104,15 +97,9 @@ struct PlayMode : Mode {
 					std::vector<Vertex> &vertices);
 
 	void draw_tiles(std::vector<Vertex> &vertices);
-
-	void update_tiles();
-	void update_trails(std::deque< std::pair<glm::uvec2, float> > trail, uint32_t color);
-	void update_territory(std::vector< glm::uvec2 > territory, uint32_t color);
+	void draw_players(std::vector<Vertex>& vertices);
 
 	std::vector< glm::uvec2 > shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector< glm::uvec2 > const &allowed_tiles);
 	void floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color);
 	void fill_interior(std::vector<glm::uvec2> &territory);
-
-	// void recalculate_territory();
-	// void recalculate_trails();
 };

@@ -118,45 +118,38 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 	if (evt.type == SDL_KEYDOWN) {
 		if (evt.key.repeat) {
 			//ignore repeats
-		} else if (evt.key.keysym.sym == SDLK_a) {
-			left.downs += 1;
-			left.pressed = true;
-			send_update = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.downs += 1;
-			right.pressed = true;
-			send_update = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.downs += 1;
-			up.pressed = true;
-			send_update = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.downs += 1;
-			down.pressed = true;
-			send_update = true;
+		}
+		else if (evt.key.keysym.sym == SDLK_a) {
+			if (dir != right) {
+				dir = left;
+				send_update = true;
+			}
 			return true;
 		}
-	} else if (evt.type == SDL_KEYUP) {
-		if (evt.key.keysym.sym == SDLK_a) {
-			left.pressed = false;
-			send_update = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.pressed = false;
-			send_update = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.pressed = false;
-			send_update = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.pressed = false;
-			send_update = true;
+		else if (evt.key.keysym.sym == SDLK_d) {
+			if (dir != left) {
+				dir = right;
+				send_update = true;
+			}
 			return true;
 		}
+		else if (evt.key.keysym.sym == SDLK_w) {
+			if (dir != down) {
+				dir = up;
+				send_update = true;
+			}
+			return true;
+		}
+		else if (evt.key.keysym.sym == SDLK_s) {
+			if (dir != up) {
+				dir = down;
+				send_update = true;
+			}
+			return true;
+		}
+	}
+	else if (evt.type == SDL_KEYUP) {
+		// do nothing
 	}
 
 	return false;
@@ -167,216 +160,57 @@ void PlayMode::update(float elapsed) {
 		return;
 	}
 
-	auto player = players.find(local_id);
-	if (player != players.end()) { // new player
-		Player *local_player = &player->second;
-		glm::uvec2 pos = local_player->pos;
+	//queue data for sending to server:
+	//TODO: send something that makes sense for your game
+	if (send_update) {
+		//send a two-byte message of type 'b':
+		client.connections.back().send('b');
+		client.connections.back().send((uint8_t)dir);
 
-		// check on 1 to avoid windows signed/unsigned mismatch error
-		if (left.pressed && pos.x >= 1) { pos.x--; }
-		else if (right.pressed && pos.x < uint32_t(NUM_COLS - 1)) { pos.x++; }
-		else if (up.pressed && pos.y < uint32_t(NUM_ROWS - 1)) { pos.y++; }
-		else if (down.pressed && pos.y >= 1) { pos.y--; }
-
-		// std::cout << "new position: " + glm::to_string(pos) + ", prev position: " + 
-		// 		glm::to_string(local_player->pos) << std::endl;
-
-		//reset button press counters:
-		left.downs = 0;
-		right.downs = 0;
-		up.downs = 0;
-		down.downs = 0;
-
-		// update player's position
-		if (local_player->pos == pos) { 
-			// std::cout << "we did not move, do nothing" << std::endl;
-		} // we've hit a wall, do nothing
-		else {
-			if (tiles[pos.x][pos.y] == player_colors[local_id]) { // player enters their own territory
-				// std::cout << "player enters their own territory" << std::endl;
-				// update player's territory and clear player's trail
-				for (auto t : local_player->trail) {
-					if (std::find(local_player->territory.begin(), 
-									local_player->territory.end(), t.first) 
-									== local_player->territory.end()) {
-						local_player->territory.emplace_back(t.first);
-					}
-				}
-				local_player->trail.clear();
-
-				fill_interior(local_player->territory);
-
-				// // check if the trail and the territory can form an enclosed loop
-				// if (local_player->trail.size() >= 1) {
-				// 	std::vector<glm::uvec2> allowed_tiles = {pos};
-				// 	for (auto t : local_player->territory) {
-				// 		if (std::find(allowed_tiles.begin(), allowed_tiles.end(), t) == allowed_tiles.end()) {
-				// 			allowed_tiles.emplace_back(t);
-				// 		}
-				// 	}
-				// 	if (std::find(allowed_tiles.begin(), allowed_tiles.end(), local_player->trail.) == allowed_tiles.end()) {
-				// 		allowed_tiles.emplace_back(t);
-				// 	}
-
-				// 	try {
-				// 		shortest_path(pos, local_player->trail[0].first, allowed_tiles);
-				// 		// path does exist
-				// 		fill_interior(local_player->territory);
-				// 		// update player's territory and clear player's trail
-				// 		for (auto& trail : local_player->trail) {
-				// 			glm::uvec2 trail_pos = trail.first;
-				// 			local_player->territory.emplace_back(trail_pos);
-				// 		}
-				// 		local_player->trail.clear();
-				// 	} catch (std::exception& e) {
-				// 		std::cout << e.what() << std::endl;
-				// 		local_player->trail.clear();
-				// 	}	
-				// }
-			} else if (tiles[pos.x][pos.y] == trail_colors[local_id]) { // player hits their own trail
-				// std::cout << "player hits their own trail" << std::endl;
-				std::vector<glm::uvec2> loop; // find the shortest loop that we have formed
-				assert(local_player->trail.size() >= 2);
-				std::vector< glm::uvec2 > allowed_tiles;
-				for (auto t : local_player->trail) {
-					if (t.first == local_player->trail.back().first) {
-						continue;
-					}
-					if (std::find(allowed_tiles.begin(), allowed_tiles.end(), t.first) == allowed_tiles.end()) {
-						allowed_tiles.emplace_back(t.first);
-					}
-				}
-
-				std::vector<glm::uvec2> path = shortest_path(local_player->trail[local_player->trail.size() - 2].first, 
-															pos, 
-															allowed_tiles);
-				loop.insert(loop.end(), path.begin(), path.end());
-				// reconnect loop
-				loop.push_back(local_player->trail.back().first);
-				// clear player's trail
-				local_player->trail.clear();
-
-				// add loop to territory
-				for (glm::uvec2 p : loop) {
-					if (std::find(local_player->territory.begin(), local_player->territory.end(), p) 
-						== local_player->territory.end()) {
-						local_player->territory.emplace_back(p);
-					}
-				}
-				
-				fill_interior(local_player->territory);
-			} else if (tiles[pos.x][pos.y] != white_color) { // player hits other player's trail or territory
-				// std::cout << "player hits other player's trail or territory" << std::endl;
-				// clear player's trail
-				local_player->trail.clear();
-			} else {
-				// std::cout << "update player's trail: " + glm::to_string(pos) << std::endl;
-				// update player's trail
-				local_player->trail.emplace_back(std::make_pair(pos, 0.0f));
-			}
-			local_player->pos = pos;
-		}
-
-		//age up all locations in the trail:
-		for (auto& trail : local_player->trail) {
-			trail.second += elapsed;
-		}
-
-		//trim any too-old locations from back of trail:
-		while (local_player->trail.size() >= 1 && local_player->trail.at(0).second > TRAIL_MAX_AGE) {
-			local_player->trail.pop_front();
-			send_update = true;
-		}
-
-		update_tiles();
-
-		if (send_update) {
-			//queue data for sending to server:
-			client.connections.back().send('b');
-			size_t packet_size = get_packet_size(&client.connections.back(), *local_player);
-			// std::cout << "client sending a packet of size: " + std::to_string(packet_size) << std::endl;
-			send_uint32(&client.connections.back(), packet_size);
-			send_uint32(&client.connections.back(), local_player->pos.x);
-			send_uint32(&client.connections.back(), local_player->pos.y);
-			// std::cout << "territory size = " + std::to_string(local_player->territory.size()) << std::endl;
-			send_vector(&client.connections.back(), local_player->territory);
-			// std::cout << "trail size = " + std::to_string(local_player->trail.size()) << std::endl;
-			send_uint32(&client.connections.back(), local_player->trail.size());
-			for (auto trail : local_player->trail) {
-				send_uint32(&client.connections.back(), trail.first.x);
-				send_uint32(&client.connections.back(), trail.first.y);
-			}
-			send_update = false;
-		}
+		send_update = false;
 	}
 
 	//send/receive data:
-	client.poll([this](Connection *c, Connection::Event event){
+	client.poll([this](Connection* c, Connection::Event event) {
 		if (event == Connection::OnOpen) {
-			std::cout << "[" << c->socket << "] opened" << std::endl;
-		} else if (event == Connection::OnClose) {
+			//std::cout << "[" << c->socket << "] opened" << std::endl;
+		}
+		else if (event == Connection::OnClose) {
 			//std::cout << "[" << c->socket << "] closed (!)" << std::endl;
 			throw std::runtime_error("Lost connection to server!");
-		} else { assert(event == Connection::OnRecv);
+		}
+		else {
+			assert(event == Connection::OnRecv);
 			//std::cout << "[" << c->socket << "] recv'd data. Current buffer:\n" << hex_dump(c->recv_buffer); //std::cout.flush();
-			//expecting message(s): 'u' + 4-byte [packet_size]
-			while (c->recv_buffer.size() >= 5) {
+			//expecting message(s): 'S' + 1-byte [number of players] + [number-of-player] chunks of player info:
+			while (c->recv_buffer.size() >= 2) {
+				//std::cout << "[" << c->socket << "] recv'd data of size " << c->recv_buffer.size() << ". Current buffer:\n" << hex_dump(c->recv_buffer);
+				//std::cout.flush();
 				char type = c->recv_buffer[0];
-				std::cout << "Type=" << type << std::endl;
-				if (type == 'u') {
-					size_t byte_index = 1;
-					size_t packet_size;
-					recv_uint32(c->recv_buffer, byte_index, packet_size);
-					// std::cout << "Type=" << type << ", packet size=" + std::to_string(packet_size) << std::endl;
-					// std::cout << "[" << c->socket << "] recv'd data of size " << c->recv_buffer.size() << ". Current buffer:\n" << hex_dump(c->recv_buffer);
-					// std::cout.flush();
-
-					if (c->recv_buffer.size() < 5+packet_size) break; //if whole message isn't here, can't process
+				//std::cout << "type=" << type << std::endl;
+				if (type == 'a') {
+					uint32_t num_players = uint8_t(c->recv_buffer[1]);
+					//std::cout << "num_players=" << num_players << std::endl;
+					if (c->recv_buffer.size() < 2 + num_players * 3) break; //if whole message isn't here, can't process
 					//whole message *is* here, so set current server message:
 
-					while(byte_index < packet_size) {
+					uint8_t byte_index = 2;
+					for (uint32_t k = 0; k < num_players; k++) {
 						uint8_t id = c->recv_buffer[byte_index++];
-						size_t x; size_t y;
-						recv_uint32(c->recv_buffer,byte_index, x);
-						recv_uint32(c->recv_buffer,byte_index, y);
-						
+						uint8_t x = c->recv_buffer[byte_index++];
+						uint8_t y = c->recv_buffer[byte_index++];
+						glm::vec2 pos = glm::vec2(x, y);
+
 						auto player = players.find(id);
-						if (player == players.end()) { // new player
-							Player new_player = {id, player_colors[id], glm::uvec2(x, y)};
-							recv_territory(c->recv_buffer, byte_index, (&new_player)->territory);
-							recv_trail(c->recv_buffer, byte_index, (&new_player)->trail);
-							players.insert({id,  new_player});
-						} else {
-							Player *p = &player->second;
-							p->territory.clear();
-							p->trail.clear();
-							p->pos = glm::uvec2(x,y);
-							recv_territory(c->recv_buffer, byte_index, p->territory);
-							recv_trail(c->recv_buffer, byte_index, p->trail);
-						}
+						if (player == players.end()) create_player(id, pos);
+						else update_player(&player->second, pos);
 					}
 					//and consume this part of the buffer:
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
-				} else if (type == 'i') {
-					local_id = c->recv_buffer[1];
-					size_t start = 2; size_t x; size_t y;
-					recv_uint32(c->recv_buffer, start, x);
-					recv_uint32(c->recv_buffer, start, y);
-
-					Player local_player = {local_id, player_colors[local_id], glm::uvec2(x, y)};
-
-					players.insert({local_id, local_player});
-					std::cout << "local_id=" + std::to_string(local_id) + 
-								", pos=" + glm::to_string(glm::uvec2(x, y)) << std::endl;
-					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + start);
-				} else if (type == 'g') {
-					GAME_OVER = true;
-					size_t byte_index = 1;
-					winner_id = c->recv_buffer[byte_index++];
-					recv_uint32(c->recv_buffer, byte_index, winner_score);
-					std::cout << "winner_id=" + std::to_string(winner_id) + 
-								", score=" + std::to_string(winner_score) << std::endl;
-					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
+				}
+				else if (type == 'i') {
+					// uint8_t local_id = c->recv_buffer[1];
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
 				else {
 					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
@@ -391,6 +225,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	std::vector< Vertex > vertices;
 
 	draw_tiles(vertices);
+	draw_players(vertices);
 	// draw the borders for debugging purposes
 	// draw_borders(hex_to_color_vec(border_color), vertices);
 
@@ -467,74 +302,13 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	glBindVertexArray(0);
 
 	//reset current program to none:
-	glUseProgram(0);
-	
+	glUseProgram(0);	
 
 	GL_ERRORS(); //PARANOIA: print errors just in case we did something wrong.
 
 }
 
 // ------------- helpers -----------------
-void PlayMode::recv_uint32(std::vector< char > buffer, size_t &start, size_t &result) {
-	result = uint32_t(((buffer[start] & 0xff) << 24) | 
-						((buffer[start+1] & 0xff) << 16) | 
-						((buffer[start+2] & 0xff) << 8) | 
-						(buffer[start+3] & 0xff));
-	start += 4;
-}
-
-void PlayMode::recv_territory(std::vector< char > buffer, size_t &start, std::vector< glm::uvec2 > &territory) {
-	size_t territory_size;
-	recv_uint32(buffer, start, territory_size);
-	for (int i = 0; i < territory_size; i++) {
-		size_t x;
-		recv_uint32(buffer, start, x);
-		size_t y;
-		recv_uint32(buffer, start, y);
-		territory.emplace_back(glm::uvec2(x, y));
-	}
-}
-
-void PlayMode::recv_trail(std::vector< char > buffer, size_t &start, std::deque< std::pair<glm::uvec2, float> > &trail) {
-	size_t trail_size;
-	recv_uint32(buffer, start, trail_size);
-	for (int i = 0; i < trail_size; i++) {
-		size_t x;
-		recv_uint32(buffer, start, x);
-		size_t y;
-		recv_uint32(buffer, start, y);
-		trail.emplace_back(std::make_pair(glm::uvec2(x, y), 0.0f)); // we do not care about the trail age of other players
-	}
-}
-
-size_t PlayMode::get_packet_size(Connection *c, Player local_player) {
-	size_t total_size = 0;
-	total_size += 8; //pos
-	total_size += 4;
-	total_size += 8*(local_player.territory.size());
-	total_size += 4;
-	total_size += 8*(local_player.trail.size());
-	return total_size;
-}
-
-uint8_t PlayMode::get_nth_byte(uint8_t n, size_t num) {
-	return uint8_t((num >> (8*n)) & 0xff);
-}
-
-void PlayMode::send_uint32(Connection *c, size_t num) {
-	c->send(get_nth_byte(3, num));
-	c->send(get_nth_byte(2, num));
-	c->send(get_nth_byte(1, num));
-	c->send(get_nth_byte(0, num));
-}
-
-void PlayMode::send_vector(Connection *c, std::vector< glm::uvec2 > data) {
-	send_uint32(c, data.size());
-	for (auto &vec : data) {
-		send_uint32(c, vec.x);
-		send_uint32(c, vec.y);
-	}
-}
 
 glm::u8vec4 PlayMode::hex_to_color_vec(int color_hex) {
 	return glm::u8vec4((color_hex >> 24) & 0xff, 
@@ -550,6 +324,91 @@ void PlayMode::init_tiles() {
 			tile_col.push_back(white_color);
 		}
 		tiles.push_back(tile_col);
+	}
+}
+
+void PlayMode::create_player(uint8_t id, glm::uvec2 pos) {
+	Player new_player = { id, player_colors[id], pos };
+
+	new_player.trail.emplace_back(std::make_pair(pos, 0.0f));
+	tiles[(uint8_t)pos.x][(uint8_t)pos.y] = trail_colors[id];
+
+	players.insert({ id, new_player });
+}
+
+void PlayMode::update_player(Player* p, glm::uvec2 pos) {
+	if (p->pos == pos) return;
+
+	uint8_t x = pos.x;
+	uint8_t y = pos.y;
+	uint8_t id = p->id;
+
+	// update player's position
+	p->pos = pos;
+
+	if (tiles[x][y] == player_colors[id]) { // player enters their own territory
+		// update player's territory and clear player's trail
+		for (auto t : p->trail) {
+			if (std::find(p->territory.begin(), p->territory.end(), t.first) == p->territory.end()) {
+				p->territory.emplace_back(t.first);
+			}
+			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = player_colors[id];
+		}
+		p->trail.clear();
+
+		fill_interior(p->territory);
+	}
+	else if (tiles[x][y] == trail_colors[id]) { // player hits their own trail
+		std::vector<glm::vec2> loop; // find the shortest loop that we have formed
+		assert(p->trail.size() >= 2);
+		std::vector< glm::uvec2 > allowed_tiles;
+		for (auto t : p->trail) {
+			if (t.first == p->trail.back().first) {
+				continue;
+			}
+			if (std::find(allowed_tiles.begin(), allowed_tiles.end(), t.first) == allowed_tiles.end()) {
+				allowed_tiles.emplace_back(t.first);
+			}
+		}
+
+		std::vector<glm::uvec2> path = shortest_path(p->trail[p->trail.size() - 2].first, pos, allowed_tiles);
+		loop.insert(loop.end(), path.begin(), path.end());
+		// reconnect loop
+		loop.push_back(p->trail.back().first);
+
+		// clear player's trail
+		for (auto t : p->trail) {
+			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = white_color;
+		}
+		p->trail.clear();
+
+		// add loop to territory
+		for (glm::uvec2 l : loop) {
+			if (std::find(p->territory.begin(), p->territory.end(), l) == p->territory.end()) {
+				p->territory.emplace_back(l);
+			}
+			tiles[(uint8_t)l.x][(uint8_t)l.y] = player_colors[id];
+		}
+
+		fill_interior(p->territory);
+	}
+	else if (tiles[x][y] != white_color) { // player hits other player's trail or territory
+		// clear player's trail
+		for (auto t : p->trail) {
+			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = player_colors[id];
+		}
+		p->trail.clear();
+	}
+	else {
+		// update player's trail
+		p->trail.emplace_back(std::make_pair(pos, 0.0f));
+		tiles[x][y] = trail_colors[id];
+	}
+
+	//trim any too-old locations from back of trail:
+	while (p->trail.size() > TRAIL_MAX_LEN) {
+		tiles[(uint8_t)p->trail[0].first.x][(uint8_t)p->trail[0].first.y] = white_color;
+		p->trail.pop_front();
 	}
 }
 
@@ -591,33 +450,17 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 	}
 }
 
-void PlayMode::update_tiles() {
-	for (int col = 0; col < NUM_COLS; col++) {
-		for (int row = 0; row < NUM_ROWS; row++) {
-			tiles[col][row] = white_color;
-		}
-	}
-	for (auto p : players) {
-		Player player = p.second;
-		update_trails(player.trail, trail_colors[player.id]);
-		update_territory(player.territory, player_colors[player.id]);
-	}
-	for (auto p : players) {
-		Player player = p.second;
-		tiles[player.pos.x][player.pos.y] = player_colors[player.id];
-	}
-}
-
-void PlayMode::update_trails(std::deque< std::pair<glm::uvec2, float> > trail, uint32_t color) {
-	for (auto t : trail) {
-		glm::uvec2 trail_pos = t.first;
-		tiles[trail_pos.x][trail_pos.y] = color;
-	}
-}
-
-void PlayMode::update_territory(std::vector< glm::uvec2 > territory, uint32_t color) {
-	for (glm::uvec2 v : territory) {
-		tiles[v.x][v.y] = color;
+void PlayMode::draw_players(std::vector<Vertex>& vertices) {
+	for (auto& [id, player] : players) {
+		// draw player
+		draw_rectangle(glm::vec2(player.pos.x * TILE_SIZE, player.pos.y * TILE_SIZE),
+			glm::vec2(TILE_SIZE, TILE_SIZE),
+			hex_to_color_vec(player.color),
+			vertices);
+		draw_rectangle(glm::vec2(player.pos.x * TILE_SIZE + TILE_SIZE / 4, player.pos.y * TILE_SIZE + TILE_SIZE / 4),
+			glm::vec2(TILE_SIZE / 2, TILE_SIZE / 2),
+			hex_to_color_vec(white_color),
+			vertices);
 	}
 }
 
@@ -724,7 +567,7 @@ void PlayMode::fill_interior(std::vector<glm::uvec2> &territory) {
 		const uint32_t BORDER = 1;
 		const uint32_t FILL = 2;
 
-		// uint32_t territory_color = tiles[(uint32_t) territory[0].x][(uint32_t) territory[0].y];
+		uint32_t territory_color = tiles[(uint32_t) territory[0].x][(uint32_t) territory[0].y];
 
 		// create grid, adding a 1 tile border on all sides
 		std::vector<std::vector<uint32_t>> tiles_copy;
@@ -762,7 +605,7 @@ void PlayMode::fill_interior(std::vector<glm::uvec2> &territory) {
 							}
 						}
 					}
-					// tiles[x-1][y-1] = territory_color;
+					tiles[x-1][y-1] = territory_color;
 				}
 			}
 		}

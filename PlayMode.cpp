@@ -319,9 +319,9 @@ glm::u8vec4 PlayMode::hex_to_color_vec(int color_hex) {
 
 void PlayMode::init_tiles() {
 	for (int col = 0; col < NUM_COLS; col++) {
-		std::vector<uint32_t> tile_col;
+		std::vector<Tile> tile_col;
 		for (int row = 0; row < NUM_ROWS; row++) {
-			tile_col.push_back(white_color);
+			tile_col.emplace_back(white_color, 0);
 		}
 		tiles.push_back(tile_col);
 	}
@@ -330,105 +330,117 @@ void PlayMode::init_tiles() {
 void PlayMode::create_player(uint8_t id, glm::uvec2 pos) {
 	Player new_player = { id, player_colors[id], pos };
 
-	new_player.trail.emplace_back(std::make_pair(pos, 0.0f));
-	tiles[(uint8_t)pos.x][(uint8_t)pos.y] = trail_colors[id];
+	new_player.prev_pos[0] = pos;
+	new_player.prev_pos[1] = pos;
+	tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = trail_colors[id];
 
 	players.insert({ id, new_player });
 }
 
 void PlayMode::update_player(Player* p, glm::uvec2 pos) {
-	if (p->pos == pos) {
-		if (p->trail.size() > 1) {
-			tiles[(uint8_t)p->trail[0].first.x][(uint8_t)p->trail[0].first.y] = white_color;
-			p->trail.pop_front();
-		}
-		return;
-	}
-
 	uint8_t x = pos.x;
 	uint8_t y = pos.y;
 	uint8_t id = p->id;
 
+	bool moving = p->pos != pos;
+	// position changed, shift it into prev_pos
+	if (moving) {
+		p->prev_pos[1] = p->prev_pos[0];
+		p->prev_pos[0] = p->pos;
+	}
+
 	// update player's position
 	p->pos = pos;
 
-	if (tiles[x][y] == player_colors[id]) { // player enters their own territory
-		// update player's territory and clear player's trail
-		for (auto t : p->trail) {
-			if (std::find(p->territory.begin(), p->territory.end(), t.first) == p->territory.end()) {
-				p->territory.emplace_back(t.first);
+	// update and trim player's trails
+	for (int col = 0; col < NUM_COLS; col++) {
+		for (int row = 0; row < NUM_ROWS; row++) {
+			if (tiles[col][row].color == trail_colors[id]) {
+				tiles[col][row].age++;
+				if (tiles[col][row].age >= TRAIL_MAX_LEN)
+					tiles[col][row].color = white_color;
 			}
-			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = player_colors[id];
 		}
-		p->trail.clear();
-
-		fill_interior(p->territory);
 	}
-	else if (tiles[x][y] == trail_colors[id]) { // player hits their own trail
-		std::vector<glm::vec2> loop; // find the shortest loop that we have formed
-		assert(p->trail.size() >= 2);
-		std::vector< glm::uvec2 > allowed_tiles;
-		for (auto t : p->trail) {
-			if (t.first == p->trail.back().first) {
-				continue;
-			}
-			if (std::find(allowed_tiles.begin(), allowed_tiles.end(), t.first) == allowed_tiles.end()) {
-				allowed_tiles.emplace_back(t.first);
+
+	// player enters their own territory
+	if (tiles[x][y].color == player_colors[id]) {
+		// update player's territory and clear player's trail
+		for (int col = 0; col < NUM_COLS; col++) {
+			for (int row = 0; row < NUM_ROWS; row++) {
+				if (tiles[col][row].color == trail_colors[id]) {
+					tiles[col][row].color = player_colors[id];
+				}
 			}
 		}
 
-		std::vector<glm::uvec2> path = shortest_path(p->trail[p->trail.size() - 2].first, pos, allowed_tiles);
-		loop.insert(loop.end(), path.begin(), path.end());
+		uint32_t territory_size = fill_interior(player_colors[id]);
+
+		// check if player has won
+		if (territory_size > WIN_THRESHOLD) {
+			win_game(id, territory_size);
+		}
+	}
+	// player is moving and hits their own trail
+	else if (moving && tiles[x][y].color == trail_colors[id]) {
+		// create allowed_tiles -> player's trail - previous tile
+		std::vector< glm::uvec2 > allowed_tiles;
+		for (int col = 0; col < NUM_COLS; col++) {
+			for (int row = 0; row < NUM_ROWS; row++) {
+				if (tiles[col][row].color == trail_colors[id]) {
+					glm::uvec2 allowed_pos = glm::uvec2(col, row);
+					// disconnect loop, so that the shortest path has to go the long way around the loop
+					if (allowed_pos != p->prev_pos[0])
+						allowed_tiles.emplace_back(col, row);
+				}
+			}
+		}
+
+		// find shortest path "around" the loop
+		std::vector<glm::uvec2> path = shortest_path(p->prev_pos[1], pos, allowed_tiles);
 		// reconnect loop
-		loop.push_back(p->trail.back().first);
+		path.push_back(p->prev_pos[0]);
 
 		// clear player's trail
-		for (auto t : p->trail) {
-			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = white_color;
+		allowed_tiles.push_back(p->prev_pos[0]); // re-add previous tile
+		for (auto allowed_pos : allowed_tiles) {
+			if (tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color == trail_colors[id])
+				tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color = white_color;
 		}
-		p->trail.clear();
 
 		// add loop to territory
-		for (glm::uvec2 l : loop) {
-			if (std::find(p->territory.begin(), p->territory.end(), l) == p->territory.end()) {
-				p->territory.emplace_back(l);
-			}
-			tiles[(uint8_t)l.x][(uint8_t)l.y] = player_colors[id];
+		for (glm::uvec2 pos : path) {
+			tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = player_colors[id];
 		}
 
-		fill_interior(p->territory);
-	}
-	else if (tiles[x][y] != white_color) { // player hits other player's trail or territory
-		// clear player's trail
-		for (auto t : p->trail) {
-			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = white_color;
+		uint32_t territory_size = fill_interior(player_colors[id]);
+
+		// check if player has won
+		if (territory_size > WIN_THRESHOLD) {
+			win_game(id, territory_size);
 		}
-		p->trail.clear();
+	}
+	// player hits other player's trail or territory
+	else if (tiles[x][y].color != white_color) {
+		// clear player's trail
+		for (int col = 0; col < NUM_COLS; col++) {
+			for (int row = 0; row < NUM_ROWS; row++) {
+				if (tiles[col][row].color == trail_colors[id]) {
+					tiles[col][row].color = white_color;
+				}
+			}
+		}
 	}
 	else {
 		// update player's trail
-		p->trail.emplace_back(std::make_pair(pos, 0.0f));
-		tiles[x][y] = trail_colors[id];
-	}
-
-	// trim any too-old locations from back of trail:
-	while (p->trail.size() > TRAIL_MAX_LEN) {
-		tiles[(uint8_t)p->trail[0].first.x][(uint8_t)p->trail[0].first.y] = white_color;
-		p->trail.pop_front();
-	}
-
-	// game over
-	if (p->territory.size() > NUM_COLS * NUM_ROWS / 2) {
-		GAME_OVER = true;
-		winner_id = id;
-		winner_score = p->territory.size();
-		std::cout << "game over" << ' ' << (int)winner_id << ' ' << winner_score << '\n';
+		tiles[x][y].color = trail_colors[id];
+		tiles[x][y].age = 0;
 	}
 }
 
-void PlayMode::draw_rectangle(glm::vec2 const &pos, 
-                        glm::vec2 const &size, 
-                        glm::u8vec4 const &color, 
+void PlayMode::draw_rectangle(glm::vec2 const &pos,
+                        glm::vec2 const &size,
+                        glm::u8vec4 const &color,
                         std::vector<Vertex> &vertices) {
     //draw rectangle as two CCW-oriented triangles:
     vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
@@ -440,16 +452,16 @@ void PlayMode::draw_rectangle(glm::vec2 const &pos,
     vertices.emplace_back(glm::vec3(pos.x, pos.y+size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
 };
 
-void PlayMode::draw_borders(glm::u8vec4 const &color, 
+void PlayMode::draw_borders(glm::u8vec4 const &color,
 							std::vector<Vertex> &vertices) {
 	for (int i = 0; i < NUM_ROWS+1; i++) {
-		draw_rectangle(glm::vec2(0.0f, i*TILE_SIZE-BORDER_SIZE/2.0f), 
-					glm::vec2(GRID_W, BORDER_SIZE), 
+		draw_rectangle(glm::vec2(0.0f, i*TILE_SIZE-BORDER_SIZE/2.0f),
+					glm::vec2(GRID_W, BORDER_SIZE),
 					color, vertices);
 	}
 	for (int j = 0; j < NUM_COLS+1; j++) {
-		draw_rectangle(glm::vec2(j*TILE_SIZE-BORDER_SIZE/2.0f, 0.0f), 
-					glm::vec2(BORDER_SIZE, GRID_H), 
+		draw_rectangle(glm::vec2(j*TILE_SIZE-BORDER_SIZE/2.0f, 0.0f),
+					glm::vec2(BORDER_SIZE, GRID_H),
 					color, vertices);
 	}
 }
@@ -459,13 +471,14 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 		for (int y = 0; y < NUM_ROWS; y++) {
 			draw_rectangle(glm::vec2(x * TILE_SIZE, y * TILE_SIZE),
 						   glm::vec2(TILE_SIZE, TILE_SIZE),
-				           hex_to_color_vec(tiles[x][y]), vertices);
+				           hex_to_color_vec(tiles[x][y].color), vertices);
 		}
 	}
 }
 
 void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 	for (auto& [id, player] : players) {
+		(void) id; // appease compiler's unused variable warning
 		// draw player
 		draw_rectangle(glm::vec2(player.pos.x * TILE_SIZE, player.pos.y * TILE_SIZE),
 			glm::vec2(TILE_SIZE, TILE_SIZE),
@@ -475,7 +488,24 @@ void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 			glm::vec2(TILE_SIZE / 2, TILE_SIZE / 2),
 			hex_to_color_vec(white_color),
 			vertices);
+		#ifdef DEBUG_TRAIL
+			draw_rectangle(glm::vec2(player.prev_pos[0].x * TILE_SIZE, player.prev_pos[0].y * TILE_SIZE),
+				glm::vec2(TILE_SIZE, TILE_SIZE),
+				hex_to_color_vec(0xff0000ff),
+				vertices);
+			draw_rectangle(glm::vec2(player.prev_pos[1].x * TILE_SIZE, player.prev_pos[1].y * TILE_SIZE),
+				glm::vec2(TILE_SIZE, TILE_SIZE),
+				hex_to_color_vec(0x00ff00ff),
+				vertices);
+		#endif
 	}
+}
+
+void PlayMode::win_game(uint8_t id, uint32_t area) {
+	GAME_OVER = true;
+	winner_id = winner_id;
+	winner_score = area;
+	std::cout << "game over" << ' ' << (int)winner_id << ' ' << winner_score << '\n';
 }
 
 // shortest path using Dijkstra's algorithm (will throw error if no path exists)
@@ -573,91 +603,42 @@ void PlayMode::floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, u
 	}
 };
 
-// fills all regions enclosed by a territory
-void PlayMode::fill_interior(std::vector<glm::uvec2> &territory) {
-	if (territory.size() == 0) return;
-	else {
-		const uint32_t EMPTY = 0;
-		const uint32_t BORDER = 1;
-		const uint32_t FILL = 2;
+// fills all regions enclosed by a player's color, returns new size of territory
+uint32_t PlayMode::fill_interior(uint32_t color) {
+	const uint32_t EMPTY = 0;
+	const uint32_t BORDER = 1;
+	const uint32_t FILL = 2;
 
-		uint32_t territory_color = tiles[(uint32_t) territory[0].x][(uint32_t) territory[0].y];
+	uint32_t territory_size = 0;
 
-		// create grid, adding a 1 tile border on all sides
-		std::vector<std::vector<uint32_t>> tiles_copy;
-		for (int x = -1; x < NUM_COLS + 1; x++) {
-			std::vector<uint32_t> tile_col;
-			for (int y = -1; y < NUM_ROWS + 1; y++) {
+	// create grid, adding a 1 tile border on all sides
+	std::vector<std::vector<uint32_t>> tiles_copy;
+	for (int x = -1; x < NUM_COLS + 1; x++) {
+		std::vector<uint32_t> tile_col;
+		for (int y = -1; y < NUM_ROWS + 1; y++) {
+			if (y == -1 || y == NUM_ROWS || x == -1 || x == NUM_COLS || tiles[x][y].color != color)
 				tile_col.push_back(EMPTY);
+			else {
+				// tile is in bounds and is the fill player's color
+				tile_col.push_back(BORDER);
+				territory_size++;
 			}
-			tiles_copy.push_back(tile_col);
 		}
-		// add territory
-		for (const glm::uvec2 &position: territory) {
-			tiles_copy[(uint32_t) position.x + 1][(uint32_t) position.y + 1] = BORDER;
-		}
+		tiles_copy.push_back(tile_col);
+	}
 
-		// floodfill outer area, starting from border (top-left)
-		floodfill(tiles_copy, 0, 0, FILL, EMPTY);
+	// floodfill outer area, starting from border (top-left)
+	floodfill(tiles_copy, 0, 0, FILL, EMPTY);
 
-		// set all non-filled/interior tiles to territory_color
-		for (int x = 0; x < NUM_COLS + 2; x++) {
-			for (int y = 0; y < NUM_ROWS + 2; y++) {
-				if (tiles_copy[x][y] == EMPTY && x - 1 >= 0 && y - 1 >= 0 && x - 1 < NUM_COLS && y - 1 < NUM_ROWS) {
-					glm::uvec2 pos = glm::uvec2(x-1, y-1);
-					if (std::find(territory.begin(), territory.end(), pos) == territory.end()) {
-						territory.emplace_back(pos);
-
-						if (tiles[x][y] != player_colors[local_id]) {
-							auto old_player_color = std::find(player_colors.begin(), player_colors.end(), tiles[x][y]);
-							if (old_player_color != player_colors.end()) { // if region contains territory of another player
-								int old_player_id = (int)(old_player_color - player_colors.begin());
-								auto old_territory = std::find(players.at(old_player_id).territory.begin(), players.at(old_player_id).territory.end(), glm::uvec2(x, y));
-								if (old_territory != players.at(old_player_id).territory.end()) {
-									players.at(old_player_id).territory.erase(old_territory);
-								}
-							}
-						}
-					}
-					tiles[x-1][y-1] = territory_color;
-				}
+	// set all non-filled/interior tiles to color
+	for (int x = 0; x < NUM_COLS + 2; x++) {
+		for (int y = 0; y < NUM_ROWS + 2; y++) {
+			if (tiles_copy[x][y] == EMPTY && x - 1 >= 0 && y - 1 >= 0 && x - 1 < NUM_COLS && y - 1 < NUM_ROWS) {
+				tiles[x-1][y-1].color = color;
+				territory_size++;
 			}
 		}
 	}
+
+	return territory_size;
 }
-
-// // rebuild each player's territory vector based on the tile grid
-// void PlayMode::recalculate_territory() {
-// 	for (auto &[id, player] : players) {
-// 		(void) id; // avoid unused variable
-// 		player.territory.clear();
-// 	}
-
-// 	for (int x = 0; x < NUM_COLS; x++) {
-// 		for (int y = 0; y < NUM_ROWS; y++) {
-// 			for (int i = 0; i < player_colors.size(); i++) {
-// 				if (tiles[x][y] == player_colors[i]) {
-// 					players.at(i).territory.push_back(glm::vec2(x, y));
-// 				}
-// 			}
-// 		}
-// 	}
-// }
-
-// // rebuild each player's trail vector based on the tile grid
-// void PlayMode::recalculate_trails() {
-// 	for (auto &[id, player] : players) {
-// 		(void) id; // avoid unused variable
-// 		player.trail.clear();
-// 	}
-
-// 	for (int x = 0; x < NUM_COLS; x++) {
-// 		for (int y = 0; y < NUM_ROWS; y++) {
-// 			for (int i = 0; i < trail_colors.size(); i++) {
-// 				if (tiles[x][y] == trail_colors[i]) {
-// 					players.at(i).trail.push_back(glm::vec2(x, y));
-// 				}
-// 			}
-// 		}
-// 	}
-// }

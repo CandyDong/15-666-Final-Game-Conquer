@@ -15,7 +15,6 @@ const uint8_t NUM_ROWS = 50;
 const uint8_t NUM_COLS = 80;
 const uint8_t MAX_NUM_PLAYERS = 4;
 const size_t TOTAL_AREA = NUM_ROWS*NUM_COLS;
-const size_t WIN_THRESHOLD = size_t(0.5f*TOTAL_AREA);
 
 //server state:
 static std::deque<uint32_t> unused_player_ids;

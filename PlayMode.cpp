@@ -122,28 +122,28 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		else if (evt.key.keysym.sym == SDLK_a) {
 			if (dir != right) {
 				dir = left;
-				send_update = true;
+				send_update = DIR;
 			}
 			return true;
 		}
 		else if (evt.key.keysym.sym == SDLK_d) {
 			if (dir != left) {
 				dir = right;
-				send_update = true;
+				send_update = DIR;
 			}
 			return true;
 		}
 		else if (evt.key.keysym.sym == SDLK_w) {
 			if (dir != down) {
 				dir = up;
-				send_update = true;
+				send_update = DIR;
 			}
 			return true;
 		}
 		else if (evt.key.keysym.sym == SDLK_s) {
 			if (dir != up) {
 				dir = down;
-				send_update = true;
+				send_update = DIR;
 			}
 			return true;
 		}
@@ -161,17 +161,28 @@ void PlayMode::update(float elapsed) {
 	}
 
 	//queue data for sending to server:
-	//TODO: send something that makes sense for your game
-	if (send_update) {
+	if (send_update == DIR) {
 		//send a two-byte message of type 'b':
 		client.connections.back().send('b');
 		client.connections.back().send((uint8_t)dir);
-
-		send_update = false;
+		send_update = NONE;
+	} else if (send_update == TERRITORY) {
+		// inform another player to remove the territory
+		client.connections.back().send('t');
+		uint32_t map_size = 0;
+		assert(!territories_to_update.empty());
+		for (auto p : territories_to_update) {
+			map_size += 1;
+			map_size += 4*(p.second.size());
+		}
+		send_uint32(&(client.connections.back()), map_size);
+		send_map(&(client.connections.back()), territories_to_update);
+		territories_to_update.clear();
+		send_update = NONE;
 	}
 
 	//send/receive data:
-	client.poll([this](Connection* c, Connection::Event event) {
+	client.poll([this, elapsed](Connection* c, Connection::Event event) {
 		if (event == Connection::OnOpen) {
 			//std::cout << "[" << c->socket << "] opened" << std::endl;
 		}
@@ -203,14 +214,27 @@ void PlayMode::update(float elapsed) {
 
 						auto player = players.find(id);
 						if (player == players.end()) create_player(id, pos);
-						else update_player(&player->second, pos);
+						else update_player(&player->second, pos, elapsed);
 					}
 					//and consume this part of the buffer:
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 				}
 				else if (type == 'i') {
-					// uint8_t local_id = c->recv_buffer[1];
+					local_id = c->recv_buffer[1];
+					std::cout << "Player " << std::to_string(local_id) << " connected!!" << std::endl;
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
+				}
+				else if (type == 't') {
+					size_t start = 1;
+					uint32_t map_size; recv_uint32(c->recv_buffer, start, map_size);
+					if (c->recv_buffer.size() < map_size) break; //if whole message isn't here, can't process
+					std::unordered_map<uint8_t, std::vector<glm::uvec2>> territories_to_remove;
+					recv_map(c->recv_buffer, start, territories_to_remove);
+					for (auto p : territories_to_remove) {
+						uint8_t player_id = p.first;
+						RemoveTerritories(&(players.find(player_id)->second), p.second);
+					}
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + start);
 				}
 				else {
 					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
@@ -336,13 +360,21 @@ void PlayMode::create_player(uint8_t id, glm::uvec2 pos) {
 	players.insert({ id, new_player });
 }
 
-void PlayMode::update_player(Player* p, glm::uvec2 pos) {
-	if (p->pos == pos) {
-		if (p->trail.size() > 1) {
-			tiles[(uint8_t)p->trail[0].first.x][(uint8_t)p->trail[0].first.y] = white_color;
-			p->trail.pop_front();
-		}
-		return;
+// ===============================================================================
+
+// =========================== game state update utils start ============================
+/**
+ * update player state (trail, territory, board...)
+ * to keep everthing consistent, update data structures 
+ * and redraw the board based on the data structures at the end of this function
+ * by calling update_board()
+ **/
+void PlayMode::update_player(Player* p, glm::uvec2 pos, float elapsed) {
+	// CASE 1: if player's pos is not changed, do nothing 
+	if (p->pos == pos) { 
+		update_trail(p, elapsed);
+		update_board(p);
+		return; 
 	}
 
 	uint8_t x = pos.x;
@@ -351,81 +383,91 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 
 	// update player's position
 	p->pos = pos;
-
-	if (tiles[x][y] == player_colors[id]) { // player enters their own territory
-		// update player's territory and clear player's trail
-		for (auto t : p->trail) {
-			if (std::find(p->territory.begin(), p->territory.end(), t.first) == p->territory.end()) {
-				p->territory.emplace_back(t.first);
-			}
-			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = player_colors[id];
+	// CASE 2: player enters their own territory
+	if (tiles[x][y] == player_colors[id]) { 
+		// checks whether a new territory can be formed
+		uint32_t index; // index of the connected territory in the territory list
+		bool formed = FormsNewTerritory(p->territories, pos, p->trail.front().first, index);
+		if (formed && !p->trail.empty()) {
+			std::unordered_set<glm::uvec2> old_t = p->territories[index];
+			std::unordered_set<glm::uvec2> new_t;
+			for (auto trail : p->trail) { new_t.insert(trail.first); } // insert the trail
+			
+			find_interior(p->territories, new_t); // populate new_t with the interior formed by the enclosed loop we found
+			InsertTerritory(p->territories, new_t); // insert new_t into player's territory list
 		}
 		p->trail.clear();
-
-		fill_interior(p->territory);
 	}
-	else if (tiles[x][y] == trail_colors[id]) { // player hits their own trail
-		std::vector<glm::vec2> loop; // find the shortest loop that we have formed
+	// CASE 3: player hits their own trail
+	else if (tiles[x][y] == trail_colors[id]) {
 		assert(p->trail.size() >= 2);
+		std::unordered_set<glm::uvec2> new_t; 
+		// construct the vector containing tiles that will be used to search for the shortest loop
+		// do not include the previous position (trail.back()) 
+		// because it connects with another tile in the trail, which prevents us from finding the shortest path
 		std::vector< glm::uvec2 > allowed_tiles;
 		for (auto t : p->trail) {
-			if (t.first == p->trail.back().first) {
-				continue;
-			}
-			if (std::find(allowed_tiles.begin(), allowed_tiles.end(), t.first) == allowed_tiles.end()) {
-				allowed_tiles.emplace_back(t.first);
-			}
+			if (t.first == p->trail.back().first) { continue; }
+			allowed_tiles.emplace_back(t.first);
 		}
-
 		std::vector<glm::uvec2> path = shortest_path(p->trail[p->trail.size() - 2].first, pos, allowed_tiles);
-		loop.insert(loop.end(), path.begin(), path.end());
-		// reconnect loop
-		loop.push_back(p->trail.back().first);
+		assert(!path.empty());
+		new_t.insert(path.begin(), path.end()); // insert the shortest loop that we have formed
+		new_t.insert(p->trail.back().first); // reconnect loop
+		p->trail.clear(); // clear player's trail
 
-		// clear player's trail
-		for (auto t : p->trail) {
-			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = white_color;
-		}
-		p->trail.clear();
+		find_interior(p->territories, new_t); // populate new_t with the interior formed by the enclosed loop we found
+		InsertTerritory(p->territories, new_t); // insert new_t into player's territory list
+	}
+	// CASE 4: player hits other player's trail or territory
+	else if (tiles[x][y] != white_color) { p->trail.clear(); }
+	// CASE 5: player is on an empty tile
+	else { p->trail.emplace_back(std::make_pair(pos, 0.0f)); } // update player's trail 
 
-		// add loop to territory
-		for (glm::uvec2 l : loop) {
-			if (std::find(p->territory.begin(), p->territory.end(), l) == p->territory.end()) {
-				p->territory.emplace_back(l);
-			}
-			tiles[(uint8_t)l.x][(uint8_t)l.y] = player_colors[id];
-		}
-
-		fill_interior(p->territory);
-	}
-	else if (tiles[x][y] != white_color) { // player hits other player's trail or territory
-		// clear player's trail
-		for (auto t : p->trail) {
-			tiles[(uint8_t)t.first.x][(uint8_t)t.first.y] = white_color;
-		}
-		p->trail.clear();
-	}
-	else {
-		// update player's trail
-		p->trail.emplace_back(std::make_pair(pos, 0.0f));
-		tiles[x][y] = trail_colors[id];
-	}
-
-	// trim any too-old locations from back of trail:
-	while (p->trail.size() > TRAIL_MAX_LEN) {
-		tiles[(uint8_t)p->trail[0].first.x][(uint8_t)p->trail[0].first.y] = white_color;
-		p->trail.pop_front();
-	}
+	update_trail(p, elapsed);
+	update_board(p);
 
 	// game over
-	if (p->territory.size() > NUM_COLS * NUM_ROWS / 2) {
+	if (p->territories.size() > NUM_COLS * NUM_ROWS / 2) {
 		GAME_OVER = true;
 		winner_id = id;
-		winner_score = p->territory.size();
+		// TODO: this should be changed to the total area of p's territory
+		winner_score = p->territories.size(); 
 		std::cout << "game over" << ' ' << (int)winner_id << ' ' << winner_score << '\n';
 	}
 }
 
+/**
+ * trim any too-old locations from back of trail
+ **/
+void PlayMode::update_trail(Player *p, float elapsed) {
+	//age up all locations in the trail:
+	for (auto &pair : p->trail) { pair.second += elapsed; }
+	while (p->trail.size() >= 1 && p->trail[0].second > TRAIL_MAX_AGE) {
+		p->trail.pop_front();
+	}
+}
+
+/**
+ * fill the board with correct colors based on player data
+ **/ 
+void PlayMode::update_board(Player *p) {
+	// start with a fresh state: remove all old tiles of the player (trail, territory)
+	for (int x = 0; x < NUM_COLS; x++) {
+		for (int y = 0; y < NUM_ROWS; y++) {
+			if (tiles[x][y] == p->color || tiles[x][y] == trail_colors[p->id]) { tiles[x][y] = white_color; }
+		}
+	}
+	// update tiles in the trail with trail color
+	for (std::pair<glm::uvec2, float> t : p->trail) { tiles[t.first.x][t.first.y] = trail_colors[p->id]; }
+	// update tiles in the territory with territory color
+	for (auto territory : p->territories) {
+		for (glm::uvec2 p_t : territory) { tiles[p_t.x][p_t.y] = player_colors[p->id]; }
+	}
+}
+// =========================== game state update utils end =================================
+
+// =========================== draw utils start ============================================
 void PlayMode::draw_rectangle(glm::vec2 const &pos, 
                         glm::vec2 const &size, 
                         glm::u8vec4 const &color, 
@@ -477,8 +519,12 @@ void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 			vertices);
 	}
 }
+// =========================== draw utils end ============================================
 
-// shortest path using Dijkstra's algorithm (will throw error if no path exists)
+// =========================== territory utils start =============================
+/** 
+ * shortest path using Dijkstra's algorithm (will throw error if no path exists)
+ **/
 std::vector< glm::uvec2 > PlayMode::shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector< glm::uvec2 > const &allowed_tiles) {
 	struct DijkstraPoint {
 		uint32_t distance;
@@ -560,6 +606,303 @@ std::vector< glm::uvec2 > PlayMode::shortest_path(glm::uvec2 const &start, glm::
 	return shortest_path;
 }
 
+/**
+ * 
+ * find all tiles enclosed by the trail / existing territory
+ * and save them in new_t
+ **/
+void PlayMode::find_interior(std::vector<std::unordered_set<glm::uvec2>> &territories, 
+							std::unordered_set<glm::uvec2> &new_t) {
+	const uint32_t EMPTY = 0; const uint32_t BORDER = 1; const uint32_t FILL = 2;
+
+	// create a copy of the grid with all tiles marked EMPTY, 
+	// adding a 1 tile border on all sides
+	std::vector<std::vector<uint32_t>> tiles_copy;
+	for (int x = -1; x < NUM_COLS + 1; x++) {
+		std::vector<uint32_t> tile_col;
+		for (int y = -1; y < NUM_ROWS + 1; y++) {
+			tile_col.push_back(EMPTY);
+		}
+		tiles_copy.push_back(tile_col);
+	}
+
+	// get the territory vector
+	std::vector<glm::uvec2> entire_territory = GetEntireTerritory(territories); 
+
+	// add the trail stored in new_t to the territory
+	entire_territory.insert(entire_territory.end(), new_t.begin(), new_t.end());
+
+	// add the current territories to the grid copy as BORDER
+	for (const glm::uvec2 &position: entire_territory) {
+		tiles_copy[(uint32_t) position.x + 1][(uint32_t) position.y + 1] = BORDER;
+	}
+
+	// floodfill outer area, starting from border (top-left)
+	// which makes all tiles except the territories to be set as FILL
+	floodfill(tiles_copy, 0, 0, FILL, EMPTY);
+
+	// set all non-filled/interior tiles to territory_color
+	// now all the tiles marked EMPTY should be the new territory to add
+	for (int x = 0; x < NUM_COLS + 2; x++) {
+		for (int y = 0; y < NUM_ROWS + 2; y++) {
+			if (tiles_copy[x][y] == EMPTY && x - 1 >= 0 && y - 1 >= 0 && x - 1 < NUM_COLS && y - 1 < NUM_ROWS) {
+				glm::uvec2 pos = glm::uvec2(x-1, y-1);
+				new_t.insert(pos);
+
+				// if the tile is included in another player's territory,
+				// it should be removed from that player's territory
+				std::vector<uint32_t>::const_iterator it = std::find(player_colors.begin(), player_colors.end(), tiles[x-1][y-1]);
+				if ((it != player_colors.end()) && ((it-player_colors.begin()) != local_id)) {
+					uint8_t old_player_id = (uint8_t)(it - player_colors.begin());
+					Player *old_player = &(players.at(old_player_id));
+					// remove pos from old player's territory and send updates to the player
+					RemoveFromTerritory(old_player->territories, pos, old_player_id);
+				}
+			}
+		}
+	}
+}
+
+/**
+ * check if the point is inside the territories
+ * if so remove the point from territory
+ * if the territory is empty, remove it from the list
+ * player_id is the id of the player whose territory should be removed from the baord
+ **/
+void PlayMode::RemoveFromTerritory(std::vector<std::unordered_set<glm::uvec2>> &territories,
+									glm::uvec2 pos,
+									uint8_t player_id) {
+	uint32_t index;
+	bool check = InsideTerritory(territories, pos, index);
+	if (!check) { return; }
+
+	std::unordered_set<glm::uvec2> *t = &(territories[index]);
+	t->erase(pos); // erase by value
+	// erase empty territory from the list
+	territories.erase(std::remove_if(
+				territories.begin(),
+				territories.end(),
+				[](std::unordered_set<glm::uvec2> s) { return s.empty(); }),
+    			territories.end());
+
+	// send update to the player whose territory is removed
+	send_update = TERRITORY;
+	if (territories_to_update.find(player_id) == territories_to_update.end()) {
+		territories_to_update.insert({player_id, std::vector<glm::uvec2>{}});
+	} 
+	territories_to_update[player_id].emplace_back(pos);
+}
+
+/** 
+ * remove coords from player p's territory
+ **/
+void PlayMode::RemoveTerritories(Player *p, std::vector<glm::uvec2> coords) {
+	for (glm::uvec2 coord : coords) {
+		uint32_t index;
+		bool check = InsideTerritory(p->territories, coord, index);
+		if (!check) { return; }
+
+		std::unordered_set<glm::uvec2> *t = &(p->territories[index]);
+		t->erase(coord); // erase by value
+		p->territories.erase(std::remove_if(
+				p->territories.begin(),
+				p->territories.end(),
+				[](std::unordered_set<glm::uvec2> s) { return s.empty(); }),
+    			p->territories.end());
+	}
+}
+
+/**
+ * returns true if the pos is inside one of the territory in the territory list
+ * saves the index of the territory in the territories list
+ * false if the pos is not inside any of the territory in the territory list
+ **/
+bool PlayMode::InsideTerritory(const std::vector<std::unordered_set<glm::uvec2>> &territories, 
+								glm::uvec2 pos,
+								uint32_t &index) {
+	std::vector<std::unordered_set<glm::uvec2>>::const_iterator it;
+	for (it = territories.begin(); it != territories.end(); it++) {
+		std::unordered_set<glm::uvec2> territory = *it;
+		if (territory.find(pos) != territory.end()) { 
+			index = it - territories.begin();
+			return true; 
+		}
+	}
+	return false;
+}
+
+/**
+ * helper function for the case where player enters its territory
+ * returns true if the trail forms a closed loop with an existing territory
+ * which must be the same territory which [pos] is in
+ **/ 
+bool PlayMode::FormsNewTerritory(const std::vector<std::unordered_set<glm::uvec2>> &territories, 
+								glm::uvec2 pos,
+								glm::uvec2 r_pos,
+								uint32_t &index) {
+	// find the territory pos is in
+	uint32_t p_index;
+	bool result = InsideTerritory(territories, pos, p_index);
+	assert(result);
+
+	for (glm::ivec2 dir : DIRECTIONS) {
+		glm::ivec2 neighbor = (glm::ivec2)r_pos + dir;
+		if (neighbor.x < 0 || neighbor.x >= NUM_COLS) { continue; }
+		if (neighbor.y < 0 || neighbor.y >= NUM_ROWS) { continue; }
+
+		uint32_t t_index; // saves the index of the territory if the point is contained
+		if (InsideTerritory(territories, neighbor, t_index)) {
+			if (t_index == p_index) { 
+				index = p_index;
+				return true; 
+			}
+		}
+	}
+	return false;
+}
+
+/**
+ * inserts the new territory into the territory list
+ * the set new_t must only contain tiles that are already connected!!!
+ * merge territories if the newly added territory connects with the existing territory
+ **/
+void PlayMode::InsertTerritory(std::vector<std::unordered_set<glm::uvec2>> &territories, 
+								std::unordered_set<glm::uvec2> &new_t) {
+	assert(IsIsland(new_t));
+
+	auto IsConnected = [=, &new_t](std::unordered_set<glm::uvec2> old_t) {
+		std::unordered_set<glm::uvec2> seen;
+		std::deque<glm::uvec2> queue;
+		queue.emplace_back(*new_t.begin());
+
+		while (!queue.empty()) {
+			glm::ivec2 cur_coord = (glm::ivec2)queue.front();
+			queue.pop_front();
+			seen.insert(cur_coord);
+
+			for(glm::ivec2 dir : DIRECTIONS) {
+				glm::ivec2 nex_coord = cur_coord + dir;
+
+				// keep this sanity check in case we change the DIRECTIONS vector in the future
+				if (cur_coord == nex_coord) { continue; } 
+
+				if (nex_coord.x < 0 || nex_coord.x >= NUM_COLS) { continue; }
+				if (nex_coord.y < 0 || nex_coord.y >= NUM_ROWS) { continue; }
+				if (seen.find((glm::uvec2)nex_coord) != seen.end()) { continue; }
+
+				if (old_t.find((glm::uvec2)nex_coord) != old_t.end()) {
+					// neighbor is in the old territory, which means the two territories are connected
+					return true;
+				}
+				if (new_t.find((glm::uvec2)nex_coord) != new_t.end()) {
+					// neighbor is a point in the new territory, add to queue
+					queue.emplace_back(nex_coord);
+				}
+			}
+		}
+		return false;
+	};
+
+	// find all existing territories that connects with the new territory
+	std::vector<uint32_t> indices; assert(indices.empty());
+	std::vector<std::unordered_set<glm::uvec2>>::const_iterator it;
+	for (it = territories.begin(); it != territories.end(); it++) {
+		std::unordered_set<glm::uvec2> old_t = *it;
+		if (IsConnected(old_t)) {
+			indices.emplace_back(it-territories.begin());
+		}
+	}
+	
+	// if no old_t is connected with the new_t, append new_t to the territories list
+	if (indices.empty()) {
+		territories.emplace_back(new_t);
+		return;
+	}
+
+	// merge the connected territories
+	MergeTerritories(territories, indices, new_t);
+}
+
+/**
+ * merge connected territories and update the territories list
+ * the indices vector contains the indices of the territory that is connected with 
+ * the new territory
+ **/ 
+void PlayMode::MergeTerritories(std::vector<std::unordered_set<glm::uvec2>> &territories, 
+								std::vector<uint32_t> &indices,
+								std::unordered_set<glm::uvec2> &new_t) {
+	if (indices.empty()) { return; }
+
+	std::unordered_set<glm::uvec2> merged_t;
+
+	// erase items backwards so as no to invalidate the indices
+	auto reverse_sort = [](int32_t i, int32_t j) { return (i>j); };
+	std::sort(indices.begin(), indices.end(), reverse_sort);
+
+	// insert and remove the connected territories at the same time
+	for (uint32_t ind : indices) {
+		std::unordered_set<glm::uvec2> old_t = territories[ind];
+		merged_t.insert(old_t.begin(), old_t.end());
+		territories.erase(territories.begin()+ind);
+	}
+
+	merged_t.insert(new_t.begin(), new_t.end());
+
+	// insert the merged territory to the territory list
+	territories.emplace_back(merged_t);
+}
+
+/**
+ * returns all territories in a vector
+ **/
+std::vector<glm::uvec2> PlayMode::GetEntireTerritory(const std::vector<std::unordered_set<glm::uvec2>> &territories) {
+	std::vector<glm::uvec2> result;
+	for (auto territory : territories) {
+		for (glm::uvec2 p : territory) {
+			result.emplace_back(p);
+		}
+	}
+	return result;
+}
+
+/**
+ * check if the tiles in the set are already connected to each other
+ * (forms an island)
+ **/
+bool PlayMode::IsIsland(const std::unordered_set<glm::uvec2> &coords) {
+	std::unordered_set<glm::uvec2> seen;
+
+	std::deque<glm::uvec2> queue;
+	queue.emplace_back(*coords.begin());
+
+	while (!queue.empty()) {
+		glm::ivec2 cur_coord = (glm::ivec2)queue.front();
+		queue.pop_front();
+		seen.insert(cur_coord);
+
+		// iterate through the neighbors, which should all be 
+		// contained in the coords set, or the set contains
+		// disconnected coords (does not form an island)
+		for (glm::ivec2 dir : DIRECTIONS) {
+			glm::ivec2 nex_coord = cur_coord + dir;
+
+			// keep this sanity check in case we change the DIRECTIONS vector in the future
+			if (cur_coord == nex_coord) { continue; } 
+			
+			if (nex_coord.x < 0 || nex_coord.x >= NUM_COLS) { continue; }
+			if (nex_coord.y < 0 || nex_coord.y >= NUM_ROWS) { continue; }
+			if (seen.find(nex_coord) != seen.end()) { continue; }
+
+			// add valid nex_coord to the queue if it's in coords
+			if (coords.find(nex_coord) != coords.end()) {
+				queue.emplace_back(nex_coord);
+			}
+		}
+	}
+
+	return seen.size() == coords.size();
+}
+
 void PlayMode::floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color) {
 	if (new_color == old_color) return;
 	if (x < 0 || y < 0 || x >= grid.size() || y >= grid[0].size()) return;
@@ -572,92 +915,55 @@ void PlayMode::floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, u
 		floodfill(grid, x, y - 1, new_color, old_color);
 	}
 };
+// =========================== territory utils end ===============================
 
-// fills all regions enclosed by a territory
-void PlayMode::fill_interior(std::vector<glm::uvec2> &territory) {
-	if (territory.size() == 0) return;
-	else {
-		const uint32_t EMPTY = 0;
-		const uint32_t BORDER = 1;
-		const uint32_t FILL = 2;
-
-		uint32_t territory_color = tiles[(uint32_t) territory[0].x][(uint32_t) territory[0].y];
-
-		// create grid, adding a 1 tile border on all sides
-		std::vector<std::vector<uint32_t>> tiles_copy;
-		for (int x = -1; x < NUM_COLS + 1; x++) {
-			std::vector<uint32_t> tile_col;
-			for (int y = -1; y < NUM_ROWS + 1; y++) {
-				tile_col.push_back(EMPTY);
-			}
-			tiles_copy.push_back(tile_col);
-		}
-		// add territory
-		for (const glm::uvec2 &position: territory) {
-			tiles_copy[(uint32_t) position.x + 1][(uint32_t) position.y + 1] = BORDER;
-		}
-
-		// floodfill outer area, starting from border (top-left)
-		floodfill(tiles_copy, 0, 0, FILL, EMPTY);
-
-		// set all non-filled/interior tiles to territory_color
-		for (int x = 0; x < NUM_COLS + 2; x++) {
-			for (int y = 0; y < NUM_ROWS + 2; y++) {
-				if (tiles_copy[x][y] == EMPTY && x - 1 >= 0 && y - 1 >= 0 && x - 1 < NUM_COLS && y - 1 < NUM_ROWS) {
-					glm::uvec2 pos = glm::uvec2(x-1, y-1);
-					if (std::find(territory.begin(), territory.end(), pos) == territory.end()) {
-						territory.emplace_back(pos);
-
-						if (tiles[x][y] != player_colors[local_id]) {
-							auto old_player_color = std::find(player_colors.begin(), player_colors.end(), tiles[x][y]);
-							if (old_player_color != player_colors.end()) { // if region contains territory of another player
-								int old_player_id = (int)(old_player_color - player_colors.begin());
-								auto old_territory = std::find(players.at(old_player_id).territory.begin(), players.at(old_player_id).territory.end(), glm::uvec2(x, y));
-								if (old_territory != players.at(old_player_id).territory.end()) {
-									players.at(old_player_id).territory.erase(old_territory);
-								}
-							}
-						}
-					}
-					tiles[x-1][y-1] = territory_color;
-				}
-			}
-		}
+// =========================== networking utils start ============================
+uint8_t PlayMode::get_nth_byte(uint8_t n, uint32_t num) {
+	return uint8_t((num >> (8*n)) & 0xff);
+}
+void PlayMode::send_uint32(Connection *c, uint32_t num) {
+	c->send(get_nth_byte(3, num));
+	c->send(get_nth_byte(2, num));
+	c->send(get_nth_byte(1, num));
+	c->send(get_nth_byte(0, num));
+}
+void PlayMode::recv_uint32(std::vector< char > buffer, size_t &start, uint32_t &result) {
+	result = uint32_t(((buffer[start] & 0xff) << 24) | 
+						((buffer[start+1] & 0xff) << 16) | 
+						((buffer[start+2] & 0xff) << 8) | 
+						(buffer[start+3] & 0xff));
+	start += 4;
+}
+void PlayMode::send_vector(Connection *c, std::vector< glm::uvec2 > data) {
+	send_uint32(c, data.size());
+	for (auto &vec : data) {
+		send_uint32(c, vec.x);
+		send_uint32(c, vec.y);
 	}
 }
-
-// // rebuild each player's territory vector based on the tile grid
-// void PlayMode::recalculate_territory() {
-// 	for (auto &[id, player] : players) {
-// 		(void) id; // avoid unused variable
-// 		player.territory.clear();
-// 	}
-
-// 	for (int x = 0; x < NUM_COLS; x++) {
-// 		for (int y = 0; y < NUM_ROWS; y++) {
-// 			for (int i = 0; i < player_colors.size(); i++) {
-// 				if (tiles[x][y] == player_colors[i]) {
-// 					players.at(i).territory.push_back(glm::vec2(x, y));
-// 				}
-// 			}
-// 		}
-// 	}
-// }
-
-// // rebuild each player's trail vector based on the tile grid
-// void PlayMode::recalculate_trails() {
-// 	for (auto &[id, player] : players) {
-// 		(void) id; // avoid unused variable
-// 		player.trail.clear();
-// 	}
-
-// 	for (int x = 0; x < NUM_COLS; x++) {
-// 		for (int y = 0; y < NUM_ROWS; y++) {
-// 			for (int i = 0; i < trail_colors.size(); i++) {
-// 				if (tiles[x][y] == trail_colors[i]) {
-// 					players.at(i).trail.push_back(glm::vec2(x, y));
-// 				}
-// 			}
-// 		}
-// 	}
-// }
+void PlayMode::recv_vector(std::vector<char> buffer, size_t &start, std::vector< glm::uvec2 > &data) {
+	uint32_t data_size;
+	recv_uint32(buffer, start, data_size);
+	for (uint32_t i = 0; i < data_size; i++) {
+		uint32_t x; recv_uint32(buffer, start, x);
+		uint32_t y; recv_uint32(buffer, start, y);
+		data.emplace_back(glm::uvec2(x, y));
+	}
+}
+void PlayMode::send_map(Connection *c, std::unordered_map<uint8_t, std::vector<glm::uvec2>> map) {
+	send_uint32(c, map.size());
+	for (std::pair<uint8_t, std::vector<glm::uvec2>> p : map) {
+		c->send(p.first); 
+		send_vector(c, p.second);
+	}
+}
+void PlayMode::recv_map(std::vector<char> buffer, size_t &start, std::unordered_map<uint8_t, std::vector<glm::uvec2>> &map) {
+	uint32_t map_size;
+	recv_uint32(buffer, start, map_size);
+	for (uint32_t i = 0; i < map_size; i++) {
+		uint8_t id = buffer[start++];
+		std::vector<glm::uvec2> data; recv_vector(buffer, start, data);
+		map.insert({id, data});
+	}
+}
+// =========================== networking utils end ==============================

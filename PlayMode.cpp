@@ -320,10 +320,13 @@ glm::u8vec4 PlayMode::hex_to_color_vec(int color_hex) {
 void PlayMode::init_tiles() {
 	for (int col = 0; col < NUM_COLS; col++) {
 		std::vector<Tile> tile_col;
+		std::vector<uint32_t> visual_board_col;
 		for (int row = 0; row < NUM_ROWS; row++) {
 			tile_col.emplace_back(white_color, 0);
+			visual_board_col.push_back(white_color);
 		}
 		tiles.push_back(tile_col);
+		visual_board.push_back(visual_board_col);
 	}
 }
 
@@ -365,16 +368,7 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 
 	// player enters their own territory
 	if (tiles[x][y].color == player_colors[id]) {
-		// update player's territory and clear player's trail
-		for (int col = 0; col < NUM_COLS; col++) {
-			for (int row = 0; row < NUM_ROWS; row++) {
-				if (tiles[col][row].color == trail_colors[id]) {
-					tiles[col][row].color = player_colors[id];
-				}
-			}
-		}
-
-		uint32_t territory_size = fill_interior(player_colors[id]);
+		uint32_t territory_size = fill_interior_discard_extra(trail_colors[id], player_colors[id]);
 
 		// check if player has won
 		if (territory_size > WIN_THRESHOLD) {
@@ -398,6 +392,7 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 
 		// find shortest path "around" the loop
 		std::vector<glm::uvec2> path = shortest_path(p->prev_pos[1], pos, allowed_tiles);
+		assert(path.size() > 0 && "path around loop must exist"); // assert a path exists
 		// reconnect loop
 		path.push_back(p->prev_pos[0]);
 
@@ -467,11 +462,31 @@ void PlayMode::draw_borders(glm::u8vec4 const &color,
 }
 
 void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
+	auto lerp_color = [](uint32_t col1, uint32_t col2, float amount) {
+		uint8_t r1 = (col1 >> 24) & 0xff;
+		uint8_t g1 = (col1 >> 16) & 0xff;
+		uint8_t b1 = (col1 >> 8) & 0xff;
+		uint8_t a1 = (col1) & 0xff;
+
+		uint8_t r2 = (col2 >> 24) & 0xff;
+		uint8_t g2 = (col2 >> 16) & 0xff;
+		uint8_t b2 = (col2 >> 8) & 0xff;
+		uint8_t a2 = (col2) & 0xff;
+
+		uint8_t r3 = (uint8_t) ((float) r1 * (1.0f - amount) + (float) r2 * amount);
+		uint8_t g3 = (uint8_t) ((float) g1 * (1.0f - amount) + (float) g2 * amount);
+		uint8_t b3 = (uint8_t) ((float) b1 * (1.0f - amount) + (float) b2 * amount);
+		uint8_t a3 = (uint8_t) ((float) a1 * (1.0f - amount) + (float) a2 * amount);
+
+		return (uint32_t) (r3 << 24 | g3 << 16 | b3 << 8 | a3);
+	};
+
 	for (int x = 0; x < NUM_COLS; x++) {
 		for (int y = 0; y < NUM_ROWS; y++) {
+			visual_board[x][y] = lerp_color(visual_board[x][y], tiles[x][y].color, 0.1f);
 			draw_rectangle(glm::vec2(x * TILE_SIZE, y * TILE_SIZE),
 						   glm::vec2(TILE_SIZE, TILE_SIZE),
-				           hex_to_color_vec(tiles[x][y].color), vertices);
+				           hex_to_color_vec(visual_board[x][y]), vertices);
 		}
 	}
 }
@@ -508,7 +523,7 @@ void PlayMode::win_game(uint8_t id, uint32_t area) {
 	std::cout << "game over" << ' ' << (int)winner_id << ' ' << winner_score << '\n';
 }
 
-// shortest path using Dijkstra's algorithm (will throw error if no path exists)
+// shortest path using Dijkstra's algorithm (returns empty vector if no path exists)
 std::vector< glm::uvec2 > PlayMode::shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector< glm::uvec2 > const &allowed_tiles) {
 	struct DijkstraPoint {
 		uint32_t distance;
@@ -580,8 +595,9 @@ std::vector< glm::uvec2 > PlayMode::shortest_path(glm::uvec2 const &start, glm::
 	while (pos != start) {
 		shortest_path.push_back(pos);
 		// std::cout << pos.x << ", " << pos.y << std::endl;
-		if (prev.find(pos) == prev.end()) {
-			throw std::runtime_error("No path exists");
+		if (prev.find(pos) == prev.end()) { // no path exists
+			shortest_path.clear();
+			return shortest_path;
 		}
 		pos = prev.at(pos);
 	}
@@ -637,6 +653,67 @@ uint32_t PlayMode::fill_interior(uint32_t color) {
 				tiles[x-1][y-1].color = color;
 				territory_size++;
 			}
+		}
+	}
+
+	return territory_size;
+}
+
+uint32_t PlayMode::fill_interior_discard_extra(uint32_t trail_color, uint32_t territory_color) {
+	const uint32_t EMPTY = 0;
+	const uint32_t BORDER = 1;
+	const uint32_t FILL = 2;
+
+	uint32_t territory_size = 0;
+
+	// create grid, adding a 1 tile border on all sides
+	std::vector<std::vector<uint32_t>> tiles_copy;
+	for (int x = -1; x < NUM_COLS + 1; x++) {
+		std::vector<uint32_t> tile_col;
+		for (int y = -1; y < NUM_ROWS + 1; y++) {
+			if (y == -1 || y == NUM_ROWS || x == -1 || x == NUM_COLS || (tiles[x][y].color != trail_color && tiles[x][y].color != territory_color))
+				tile_col.push_back(EMPTY);
+			else {
+				// tile is in bounds and is the fill player's color
+				tile_col.push_back(BORDER);
+				// count existing territory
+				if (tiles[x][y].color == territory_color) territory_size++;
+			}
+		}
+		tiles_copy.push_back(tile_col);
+	}
+
+	// floodfill outer area, starting from border (top-left)
+	floodfill(tiles_copy, 0, 0, FILL, EMPTY);
+
+	// set all non-filled/interior tiles to territory_color, then keep all neighboring trail tiles
+	for (int x = 0; x < NUM_COLS + 2; x++) {
+		for (int y = 0; y < NUM_ROWS + 2; y++) {
+			if (tiles_copy[x][y] == EMPTY && x - 1 >= 0 && y - 1 >= 0 && x - 1 < NUM_COLS && y - 1 < NUM_ROWS) {
+				tiles[x-1][y-1].color = territory_color;
+				territory_size++;
+
+				// fill in trail if it borders the newly filled area
+				for (int xx = -1; xx <= 1; xx++) {
+					for (int yy = -1; yy <= 1; yy++) {
+						if (x-1 + xx >= 0 &&
+						    x-1 + xx < NUM_COLS &&
+						    y-1 + yy >= 0 &&
+						    y-1 + yy < NUM_ROWS &&
+						    tiles[x-1 + xx][y-1 + yy].color == trail_color) {
+							tiles[x-1 + xx][y-1 + yy].color = territory_color;
+							territory_size++;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// clear trail
+	for (int x = 0; x < NUM_COLS; x++) {
+		for (int y = 0; y < NUM_ROWS; y++) {
+			if(tiles[x][y].color == trail_color) tiles[x][y].color = white_color;
 		}
 	}
 

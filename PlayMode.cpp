@@ -483,10 +483,25 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 
 	for (int x = 0; x < NUM_COLS; x++) {
 		for (int y = 0; y < NUM_ROWS; y++) {
-			visual_board[x][y] = lerp_color(visual_board[x][y], tiles[x][y].color, 0.1f);
+			bool is_trail_color = false;
+			for (uint32_t const &col : trail_colors) {
+				if (tiles[x][y].color == col) {
+					is_trail_color = true;
+					break;
+				}
+			}
+			if (tiles[x][y].color == white_color || is_trail_color) {
+				visual_board[x][y] = tiles[x][y].color;
+			}
+			else {
+				visual_board[x][y] = lerp_color(visual_board[x][y], tiles[x][y].color, 0.1f);
+			}
+			glm::u8vec4 color = hex_to_color_vec(visual_board[x][y]);
+			
 			draw_rectangle(glm::vec2(x * TILE_SIZE, y * TILE_SIZE),
-						   glm::vec2(TILE_SIZE, TILE_SIZE),
-				           hex_to_color_vec(visual_board[x][y]), vertices);
+			               glm::vec2(TILE_SIZE, TILE_SIZE),
+			               color,
+			               vertices);
 		}
 	}
 }

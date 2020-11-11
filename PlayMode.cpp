@@ -533,7 +533,7 @@ void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 
 void PlayMode::win_game(uint8_t id, uint32_t area) {
 	GAME_OVER = true;
-	winner_id = winner_id;
+	winner_id = id;
 	winner_score = area;
 	std::cout << "game over" << ' ' << (int)winner_id << ' ' << winner_score << '\n';
 }

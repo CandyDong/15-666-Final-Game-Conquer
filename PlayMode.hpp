@@ -70,22 +70,10 @@ struct PlayMode : Mode
 	std::unordered_map<uint8_t, Player> players;
 	uint8_t local_id; // player corresponding to this connection
 
-	// player's direction
-	enum Dir
-	{
-		left,
-		right,
-		up,
-		down,
-		none
-	};
-	Dir dir = none;
+	enum Dir { left, right, up, down, none };
 
 	//connection to server:
 	Client &client;
-
-	// flag when to send update to server
-	bool send_update = false;
 
 	// ----- texture ------
 	GLuint vertex_buffer = 0;

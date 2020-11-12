@@ -114,44 +114,6 @@ PlayMode::~PlayMode() {
 }
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
-
-	if (evt.type == SDL_KEYDOWN) {
-		if (evt.key.repeat) {
-			//ignore repeats
-		}
-		else if (evt.key.keysym.sym == SDLK_a) {
-			if (dir != right) {
-				dir = left;
-				send_update = true;
-			}
-			return true;
-		}
-		else if (evt.key.keysym.sym == SDLK_d) {
-			if (dir != left) {
-				dir = right;
-				send_update = true;
-			}
-			return true;
-		}
-		else if (evt.key.keysym.sym == SDLK_w) {
-			if (dir != down) {
-				dir = up;
-				send_update = true;
-			}
-			return true;
-		}
-		else if (evt.key.keysym.sym == SDLK_s) {
-			if (dir != up) {
-				dir = down;
-				send_update = true;
-			}
-			return true;
-		}
-	}
-	else if (evt.type == SDL_KEYUP) {
-		// do nothing
-	}
-
 	return false;
 }
 
@@ -161,14 +123,22 @@ void PlayMode::update(float elapsed) {
 	}
 
 	//queue data for sending to server:
-	//TODO: send something that makes sense for your game
-	if (send_update) {
-		//send a two-byte message of type 'b':
-		client.connections.back().send('b');
-		client.connections.back().send((uint8_t)dir);
 
-		send_update = false;
+	const uint8_t *key = SDL_GetKeyboardState(NULL);
+	Dir dir = none;
+	if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_A]) {
+		dir = left;
+	} else if (key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_D]) {
+		dir = right;
+	} else if (key[SDL_SCANCODE_UP] || key[SDL_SCANCODE_W]) {
+		dir = up;
+	} else if (key[SDL_SCANCODE_DOWN] || key[SDL_SCANCODE_S]) {
+		dir = down;
 	}
+
+	//send a two-byte message of type 'b':
+	client.connections.back().send('b');
+	client.connections.back().send((uint8_t)dir);
 
 	//send/receive data:
 	client.poll([this](Connection* c, Connection::Event event) {
@@ -368,44 +338,13 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 
 	// player enters their own territory
 	if (tiles[x][y].color == player_colors[id]) {
-		uint32_t territory_size = fill_interior_discard_extra(trail_colors[id], player_colors[id]);
-
-		// check if player has won
-		if (territory_size > WIN_THRESHOLD) {
-			win_game(id, territory_size);
-		}
-	}
-	// player is moving and hits their own trail
-	else if (moving && tiles[x][y].color == trail_colors[id]) {
-		// create allowed_tiles -> player's trail - previous tile
-		std::vector< glm::uvec2 > allowed_tiles;
+		// update player's territory and clear player's trail
 		for (int col = 0; col < NUM_COLS; col++) {
 			for (int row = 0; row < NUM_ROWS; row++) {
 				if (tiles[col][row].color == trail_colors[id]) {
-					glm::uvec2 allowed_pos = glm::uvec2(col, row);
-					// disconnect loop, so that the shortest path has to go the long way around the loop
-					if (allowed_pos != p->prev_pos[0])
-						allowed_tiles.emplace_back(col, row);
+					tiles[col][row].color = player_colors[id];
 				}
 			}
-		}
-
-		// find shortest path "around" the loop
-		std::vector<glm::uvec2> path = shortest_path(p->prev_pos[1], pos, allowed_tiles);
-		assert(path.size() > 0 && "path around loop must exist"); // assert a path exists
-		// reconnect loop
-		path.push_back(p->prev_pos[0]);
-
-		// clear player's trail
-		allowed_tiles.push_back(p->prev_pos[0]); // re-add previous tile
-		for (auto allowed_pos : allowed_tiles) {
-			if (tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color == trail_colors[id])
-				tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color = white_color;
-		}
-
-		// add loop to territory
-		for (glm::uvec2 pos : path) {
-			tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = player_colors[id];
 		}
 
 		uint32_t territory_size = fill_interior(player_colors[id]);
@@ -415,15 +354,75 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 			win_game(id, territory_size);
 		}
 	}
-	// player hits other player's trail or territory
-	else if (tiles[x][y].color != white_color) {
-		// clear player's trail
-		for (int col = 0; col < NUM_COLS; col++) {
-			for (int row = 0; row < NUM_ROWS; row++) {
-				if (tiles[col][row].color == trail_colors[id]) {
-					tiles[col][row].color = white_color;
+	// player hits their own trail
+	else if (tiles[x][y].color == trail_colors[id]) {
+		if (moving) {
+			// create allowed_tiles -> player's trail - previous tile
+			std::vector< glm::uvec2 > allowed_tiles;
+			for (int col = 0; col < NUM_COLS; col++) {
+				for (int row = 0; row < NUM_ROWS; row++) {
+					if (tiles[col][row].color == trail_colors[id]) {
+						glm::uvec2 allowed_pos = glm::uvec2(col, row);
+						// disconnect loop, so that the shortest path has to go the long way around the loop
+						if (allowed_pos != p->prev_pos[0])
+							allowed_tiles.emplace_back(col, row);
+					}
 				}
 			}
+
+			// find shortest path "around" the loop
+			std::vector<glm::uvec2> path = shortest_path(p->prev_pos[1], pos, allowed_tiles);
+			assert(path.size() > 0 && "path around loop must exist"); // assert a path exists
+			// reconnect loop
+			path.push_back(p->prev_pos[0]);
+
+			// clear player's trail
+			allowed_tiles.push_back(p->prev_pos[0]); // re-add previous tile
+			for (auto allowed_pos : allowed_tiles) {
+				if (tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color == trail_colors[id])
+					tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color = white_color;
+			}
+
+			// add loop to territory
+			for (glm::uvec2 pos : path) {
+				tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = player_colors[id];
+			}
+
+			uint32_t territory_size = fill_interior(player_colors[id]);
+
+			// check if player has won
+			if (territory_size > WIN_THRESHOLD) {
+				win_game(id, territory_size);
+			}
+		}
+	}
+	// player hits other player's trail or territory
+	else if (tiles[x][y].color != white_color) {
+		// hit other player's territory:
+		if (std::find(player_colors.begin(), player_colors.end(), tiles[x][y].color) != player_colors.end()) {
+			// clear own trail
+			for (int col = 0; col < NUM_COLS; col++) {
+				for (int row = 0; row < NUM_ROWS; row++) {
+					if (tiles[col][row].color == trail_colors[id]) {
+						tiles[col][row].color = white_color;
+					}
+				}
+			}
+		}
+		// hit other player's trail
+		else if (std::find(trail_colors.begin(), trail_colors.end(), tiles[x][y].color) != trail_colors.end()) {
+			// clear other player's trail
+			uint32_t other_player_trail_color = tiles[x][y].color;
+			for (int col = 0; col < NUM_COLS; col++) {
+				for (int row = 0; row < NUM_ROWS; row++) {
+					if (tiles[col][row].color == other_player_trail_color) {
+						tiles[col][row].color = white_color;
+					}
+				}
+			}
+			// overwrite with our trail
+			tiles[x][y].color = trail_colors[id];
+			tiles[x][y].age = 0;
 		}
 	}
 	else {

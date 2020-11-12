@@ -178,7 +178,16 @@ void PlayMode::update(float elapsed) {
 					//and consume this part of the buffer:
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
 				}
+				else if (type == 'g') {
+					if (c->recv_buffer.size() < 3) break; //if whole message isn't here, can't process
+
+					horizontal_border = c->recv_buffer[1];
+					vertical_border = c->recv_buffer[2];
+
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 3);
+				}
 				else if (type == 'i') {
+					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
 					// uint8_t local_id = c->recv_buffer[1];
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
@@ -272,7 +281,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	glBindVertexArray(0);
 
 	//reset current program to none:
-	glUseProgram(0);	
+	glUseProgram(0);
 
 	GL_ERRORS(); //PARANOIA: print errors just in case we did something wrong.
 
@@ -503,6 +512,12 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 			               vertices);
 		}
 	}
+
+	// draw borders
+	draw_rectangle(glm::vec2(0, 0), glm::vec2(NUM_COLS, vertical_border) * TILE_SIZE, glm::u8vec4(0, 0, 0, 255), vertices);
+	draw_rectangle(glm::vec2(0, NUM_ROWS - vertical_border) * TILE_SIZE, glm::vec2(NUM_COLS, vertical_border) * TILE_SIZE, glm::u8vec4(0, 0, 0, 255), vertices);
+	draw_rectangle(glm::vec2(0, 0), glm::vec2(horizontal_border, NUM_ROWS) * TILE_SIZE, glm::u8vec4(0, 0, 0, 255), vertices);
+	draw_rectangle(glm::vec2(NUM_COLS - horizontal_border, 0) * TILE_SIZE, glm::vec2(horizontal_border, NUM_ROWS) * TILE_SIZE, glm::u8vec4(0, 0, 0, 255), vertices);
 }
 
 void PlayMode::draw_players(std::vector<Vertex>& vertices) {
@@ -667,67 +682,6 @@ uint32_t PlayMode::fill_interior(uint32_t color) {
 				tiles[x-1][y-1].color = color;
 				territory_size++;
 			}
-		}
-	}
-
-	return territory_size;
-}
-
-uint32_t PlayMode::fill_interior_discard_extra(uint32_t trail_color, uint32_t territory_color) {
-	const uint32_t EMPTY = 0;
-	const uint32_t BORDER = 1;
-	const uint32_t FILL = 2;
-
-	uint32_t territory_size = 0;
-
-	// create grid, adding a 1 tile border on all sides
-	std::vector<std::vector<uint32_t>> tiles_copy;
-	for (int x = -1; x < NUM_COLS + 1; x++) {
-		std::vector<uint32_t> tile_col;
-		for (int y = -1; y < NUM_ROWS + 1; y++) {
-			if (y == -1 || y == NUM_ROWS || x == -1 || x == NUM_COLS || (tiles[x][y].color != trail_color && tiles[x][y].color != territory_color))
-				tile_col.push_back(EMPTY);
-			else {
-				// tile is in bounds and is the fill player's color
-				tile_col.push_back(BORDER);
-				// count existing territory
-				if (tiles[x][y].color == territory_color) territory_size++;
-			}
-		}
-		tiles_copy.push_back(tile_col);
-	}
-
-	// floodfill outer area, starting from border (top-left)
-	floodfill(tiles_copy, 0, 0, FILL, EMPTY);
-
-	// set all non-filled/interior tiles to territory_color, then keep all neighboring trail tiles
-	for (int x = 0; x < NUM_COLS + 2; x++) {
-		for (int y = 0; y < NUM_ROWS + 2; y++) {
-			if (tiles_copy[x][y] == EMPTY && x - 1 >= 0 && y - 1 >= 0 && x - 1 < NUM_COLS && y - 1 < NUM_ROWS) {
-				tiles[x-1][y-1].color = territory_color;
-				territory_size++;
-
-				// fill in trail if it borders the newly filled area
-				for (int xx = -1; xx <= 1; xx++) {
-					for (int yy = -1; yy <= 1; yy++) {
-						if (x-1 + xx >= 0 &&
-						    x-1 + xx < NUM_COLS &&
-						    y-1 + yy >= 0 &&
-						    y-1 + yy < NUM_ROWS &&
-						    tiles[x-1 + xx][y-1 + yy].color == trail_color) {
-							tiles[x-1 + xx][y-1 + yy].color = territory_color;
-							territory_size++;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// clear trail
-	for (int x = 0; x < NUM_COLS; x++) {
-		for (int y = 0; y < NUM_ROWS; y++) {
-			if(tiles[x][y].color == trail_color) tiles[x][y].color = white_color;
 		}
 	}
 

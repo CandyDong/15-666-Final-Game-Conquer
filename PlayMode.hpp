@@ -56,6 +56,7 @@ struct PlayMode : Mode
 
 	std::vector<std::vector<Tile>> tiles; // logical representation of game state
 	std::vector<std::vector<uint32_t>> visual_board; // visual representation of game state
+	uint8_t horizontal_border, vertical_border; // "walls"
 
 	struct Player
 	{
@@ -111,5 +112,4 @@ struct PlayMode : Mode
 	std::vector<glm::uvec2> shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector<glm::uvec2> const &allowed_tiles);
 	void floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color);
 	uint32_t fill_interior(uint32_t color);
-	uint32_t fill_interior_discard_extra(uint32_t trail_color, uint32_t territory_color);
 };

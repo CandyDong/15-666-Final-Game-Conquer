@@ -19,29 +19,32 @@ const uint8_t MAX_NUM_PLAYERS = 4;
 static std::deque<uint32_t> unused_player_ids;
 static std::vector<glm::uvec2> init_positions;
 
+uint8_t horizontal_border = (NUM_COLS - 20) / 2; // size of L/R walls
+uint8_t vertical_border = (NUM_ROWS - 20) / 2; // size of T/B walls
+const uint8_t BORDER_DECREMENT = 3;
+const uint32_t LEVEL_GROW_INTERVAL = 100; // in ticks
+
 //per-client state:
 struct PlayerInfo {
 	PlayerInfo() { 
 		id = unused_player_ids.front();
 		unused_player_ids.pop_front();
 		name = "Player " + std::to_string(id);
-		uint8_t x, y;
 		do {
-			x = rand() % NUM_COLS;
-			y = rand() % NUM_ROWS;
-		} while (std::find(init_positions.begin(), 
-							init_positions.end(), 
-							glm::uvec2(x, y)) 
+			x = (rand() % (NUM_COLS - horizontal_border * 2)) + horizontal_border;
+			y = (rand() % (NUM_ROWS - vertical_border * 2)) + vertical_border;
+		} while (std::find(init_positions.begin(),
+							init_positions.end(),
+							glm::uvec2(x, y))
 				!= init_positions.end());
 		init_positions.emplace_back(glm::uvec2(x, y));
-		pos = glm::uvec2(x, y);
 		
 		std::cout << name << " connected: (" + std::to_string(x) + ", " + std::to_string(y) + ");" << std::endl;
 	}
 	std::string name;
 	uint8_t id;
 	uint8_t dir;
-	glm::uvec2 pos;
+	uint8_t x, y;
 };
 
 static std::unordered_map< Connection *, PlayerInfo > players;
@@ -76,12 +79,14 @@ int main(int argc, char **argv) {
 
 	while (true) {
 		static auto next_tick = std::chrono::steady_clock::now() + std::chrono::duration< double >(ServerTick);
+		static uint32_t tick = 0;
 		//process incoming data from clients until a tick has elapsed:
 		while (true) {
 			auto now = std::chrono::steady_clock::now();
 			double remain = std::chrono::duration< double >(next_tick - now).count();
 			if (remain < 0.0) {
 				next_tick += std::chrono::duration< double >(ServerTick);
+				tick++;
 				break;
 			}
 			server.poll([&](Connection* c, Connection::Event evt) {
@@ -97,6 +102,9 @@ int main(int argc, char **argv) {
 						// send player id
 						c->send('i');
 						c->send(players.at(c).id);
+						c->send('g');
+						c->send(uint8_t(horizontal_border));
+						c->send(uint8_t(vertical_border));
 					}
 				}
 				else if (evt == Connection::OnClose) {
@@ -146,22 +154,34 @@ int main(int argc, char **argv) {
 				}, remain);
 		}
 
+		if (tick % LEVEL_GROW_INTERVAL == 0) {
+			horizontal_border = glm::max(0, horizontal_border - BORDER_DECREMENT);
+			vertical_border = glm::max(0, vertical_border - BORDER_DECREMENT);
+
+			for (auto& [c, player] : players) {
+				(void)player; //work around "unused variable" warning on whatever g++ github actions uses
+				c->send('g');
+				c->send(uint8_t(horizontal_border));
+				c->send(uint8_t(vertical_border));
+			}
+		}
+
 		//update current game state
 		//TODO: replace with *your* game state update
 		// update player position
 		for (auto& [c, player] : players) {
 			(void)c;
-			if (player.dir == 0 && player.pos.x > 0) {
-				player.pos.x--;
+			if (player.dir == 0 && player.x > horizontal_border) {
+				player.x--;
 			}
-			else if (player.dir == 1 && player.pos.x < NUM_COLS - 1) {
-				player.pos.x++;
+			else if (player.dir == 1 && player.x < NUM_COLS - 1 - horizontal_border) {
+				player.x++;
 			}
-			else if (player.dir == 2 && player.pos.y < NUM_ROWS - 1) {
-				player.pos.y++;
+			else if (player.dir == 2 && player.y < NUM_ROWS - 1 - vertical_border) {
+				player.y++;
 			}
-			else if (player.dir == 3 && player.pos.y > 0) {
-				player.pos.y--;
+			else if (player.dir == 3 && player.y > vertical_border) {
+				player.y--;
 			}
 		}
 
@@ -175,8 +195,8 @@ int main(int argc, char **argv) {
 			for (auto& [c_prime, player_prime] : players) {
 				(void)c_prime;
 				c->send(uint8_t(player_prime.id));
-				c->send(uint8_t(player_prime.pos.x));
-				c->send(uint8_t(player_prime.pos.y));
+				c->send(uint8_t(player_prime.x));
+				c->send(uint8_t(player_prime.y));
 			}
 		}
 	}

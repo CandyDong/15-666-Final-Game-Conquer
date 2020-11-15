@@ -127,13 +127,17 @@ void PlayMode::update(float elapsed) {
 	const uint8_t *key = SDL_GetKeyboardState(NULL);
 	Dir dir = none;
 	if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_A]) {
-		dir = left;
+		if (players.at(local_id).powerup == speed) dir = ll;
+		else dir = left;
 	} else if (key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_D]) {
-		dir = right;
+		if (players.at(local_id).powerup == speed) dir = rr;
+		else dir = right;
 	} else if (key[SDL_SCANCODE_UP] || key[SDL_SCANCODE_W]) {
-		dir = up;
+		if (players.at(local_id).powerup == speed) dir = uu;
+		else dir = up;
 	} else if (key[SDL_SCANCODE_DOWN] || key[SDL_SCANCODE_S]) {
-		dir = down;
+		if (players.at(local_id).powerup == speed) dir = dd;
+		else dir = down;
 	}
 
 	//send a two-byte message of type 'b':
@@ -173,7 +177,16 @@ void PlayMode::update(float elapsed) {
 
 						auto player = players.find(id);
 						if (player == players.end()) create_player(id, pos);
-						else update_player(&player->second, pos);
+						else {
+							Player* p = &player->second;
+							// std::cout << p->pos.x << ' ' << p->pos.y << ' ' << pos.x << ' ' << pos.y << '\n';
+							if (std::abs((int)p->pos.x - (int)pos.x) > 1 ||
+								std::abs((int)p->pos.y - (int)pos.y) > 1) { // moved 2 tiles
+								update_player(p, glm::vec2((p->pos.x + pos.x) / 2,
+									                       (p->pos.y + pos.y) / 2));
+							}
+							update_player(p, pos);
+						}
 					}
 					//and consume this part of the buffer:
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
@@ -188,7 +201,7 @@ void PlayMode::update(float elapsed) {
 				}
 				else if (type == 'i') {
 					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
-					// uint8_t local_id = c->recv_buffer[1];
+					local_id = c->recv_buffer[1];
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
 				else {
@@ -197,6 +210,15 @@ void PlayMode::update(float elapsed) {
 			}
 		}
 	}, 0.0);
+
+	// update powerup
+	if (powerup_cd > 0.0f) {
+		powerup_cd -= elapsed;
+	}
+	else {
+		new_powerup();
+		powerup_cd = 10.0f;
+	}
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -339,10 +361,24 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 		for (int row = 0; row < NUM_ROWS; row++) {
 			if (tiles[col][row].color == trail_colors[id]) {
 				tiles[col][row].age++;
-				if (tiles[col][row].age >= TRAIL_MAX_LEN)
-					tiles[col][row].color = white_color;
+				if (p->powerup == trail) {
+					if (tiles[col][row].age >= TRAIL_MAX_LEN + TRAIL_POWERUP_LEN)
+						tiles[col][row].color = white_color;
+				}
+				else {
+					if (tiles[col][row].age >= TRAIL_MAX_LEN)
+						tiles[col][row].color = white_color;
+				}
 			}
 		}
+	}
+
+	// player gets powerup
+	if (tiles[x][y].powerup != no_powerup) {
+		p->powerup = tiles[x][y].powerup;
+		std::cout << tiles[x][y].powerup;
+		tiles[x][y].powerup = no_powerup;
+		powerup_cd = 10.0f;
 	}
 
 	// player enters their own territory
@@ -505,6 +541,12 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 				visual_board[x][y] = lerp_color(visual_board[x][y], tiles[x][y].color, 0.1f);
 			}
 			glm::u8vec4 color = hex_to_color_vec(visual_board[x][y]);
+
+			// draw powerup
+			if (tiles[x][y].powerup != no_powerup) {
+				color = hex_to_color_vec(black_color);
+				std::cout << x << y << '\n';
+			}
 			
 			draw_rectangle(glm::vec2(x * TILE_SIZE, y * TILE_SIZE),
 			               glm::vec2(TILE_SIZE, TILE_SIZE),
@@ -543,6 +585,28 @@ void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 				vertices);
 		#endif
 	}
+}
+
+// clear powerup in tiles
+// clear player's powerup
+// create new random powerup in tiles
+void PlayMode::new_powerup() {
+	std::vector<glm::uvec2> empty_pos;
+	for (int x = horizontal_border; x < NUM_COLS - 1 - horizontal_border; x++) {
+		for (int y = vertical_border; y < NUM_ROWS - 1 - vertical_border; y++) {
+			tiles[x][y].powerup = no_powerup;
+			if (tiles[x][y].color == white_color) {
+				empty_pos.push_back(glm::uvec2(x, y));
+			}
+		}
+	}
+
+	for (auto& [id, player] : players) {
+		player.powerup = no_powerup;
+	}
+
+	int rnd_idx = rand() % empty_pos.size();
+	tiles[empty_pos[rnd_idx].x][empty_pos[rnd_idx].y].powerup = (Powerup)(rand() % n_powerups);
 }
 
 void PlayMode::win_game(uint8_t id, uint32_t area) {

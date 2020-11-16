@@ -665,6 +665,7 @@ void PlayMode::new_powerup() {
 	}
 
 	for (auto& [id, player] : players) {
+		(void) id;
 		player.powerup = no_powerup;
 	}
 

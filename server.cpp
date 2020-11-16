@@ -9,15 +9,27 @@
 #include <cassert>
 #include <unordered_map>
 #include <deque>
-#include <glm/glm.hpp>
+#include <algorithm>
 
 const uint8_t NUM_ROWS = 50;
 const uint8_t NUM_COLS = 80;
 const uint8_t MAX_NUM_PLAYERS = 4;
 
+struct Uvec2 {
+	Uvec2(_x, _y): x(_x), y(_x) { }
+	uint32_t x, y;
+	inline Uvec2& operator = (const Uvec2 &a) {
+		x = a.x;
+		y = b.y;
+		return *this;
+	}
+	inline bool operator == (const Uvec2 &a, const Uvec2 &b) return a.x == b.x && a.y == b.y;
+	inline bool operator != (const Uvec2 &a, const Uvec2 &b) return !(a == b);
+};
+
 //server state:
 static std::deque<uint32_t> unused_player_ids;
-static std::vector<glm::uvec2> init_positions;
+static std::vector<Uvec2> init_positions;
 
 uint8_t horizontal_border = (NUM_COLS - 20) / 2; // size of L/R walls
 uint8_t vertical_border = (NUM_ROWS - 20) / 2; // size of T/B walls
@@ -35,9 +47,9 @@ struct PlayerInfo {
 			y = (rand() % (NUM_ROWS - vertical_border * 2)) + vertical_border;
 		} while (std::find(init_positions.begin(),
 							init_positions.end(),
-							glm::uvec2(x, y))
+							Uvec2(x, y))
 				!= init_positions.end());
-		init_positions.emplace_back(glm::uvec2(x, y));
+		init_positions.emplace_back(x, y);
 		
 		std::cout << name << " connected: (" + std::to_string(x) + ", " + std::to_string(y) + ");" << std::endl;
 	}
@@ -148,8 +160,8 @@ int main(int argc, char **argv) {
 		}
 
 		if (tick % LEVEL_GROW_INTERVAL == 0) {
-			horizontal_border = glm::max(0, horizontal_border - BORDER_DECREMENT);
-			vertical_border = glm::max(0, vertical_border - BORDER_DECREMENT);
+			horizontal_border = std::max(0, horizontal_border - BORDER_DECREMENT);
+			vertical_border = std::max(0, vertical_border - BORDER_DECREMENT);
 
 			for (auto& [c, player] : players) {
 				(void)player; //work around "unused variable" warning on whatever g++ github actions uses

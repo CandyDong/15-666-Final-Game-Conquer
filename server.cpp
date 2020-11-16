@@ -16,15 +16,15 @@ const uint8_t NUM_COLS = 80;
 const uint8_t MAX_NUM_PLAYERS = 4;
 
 struct Uvec2 {
-	Uvec2(_x, _y): x(_x), y(_x) { }
+	Uvec2(const uint32_t &_x, const uint32_t &_y): x(_x), y(_x) { }
 	uint32_t x, y;
 	inline Uvec2& operator = (const Uvec2 &a) {
 		x = a.x;
 		y = b.y;
 		return *this;
 	}
-	inline bool operator == (const Uvec2 &a, const Uvec2 &b) return a.x == b.x && a.y == b.y;
-	inline bool operator != (const Uvec2 &a, const Uvec2 &b) return !(a == b);
+	inline bool operator == (const Uvec2 &a) return x == a.x && y == a.y;
+	inline bool operator != (const Uvec2 &a) return !(*this == a);
 };
 
 //server state:

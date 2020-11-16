@@ -20,11 +20,11 @@ struct Uvec2 {
 	uint32_t x, y;
 	inline Uvec2& operator = (const Uvec2 &a) {
 		x = a.x;
-		y = b.y;
+		y = a.y;
 		return *this;
 	}
-	inline bool operator == (const Uvec2 &a) return x == a.x && y == a.y;
-	inline bool operator != (const Uvec2 &a) return !(*this == a);
+	inline bool operator == (const Uvec2 &a) { return x == a.x && y == a.y; }
+	inline bool operator != (const Uvec2 &a) { return !(*this == a); }
 };
 
 //server state:

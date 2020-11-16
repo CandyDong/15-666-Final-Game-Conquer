@@ -1,6 +1,6 @@
-dist/*
 objs/*
 .vs/*
 .vscode/*
 scenes/*
 .DS_Store
+dist/original_sound_tracks

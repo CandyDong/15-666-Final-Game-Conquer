@@ -43,7 +43,7 @@ struct PlayerInfo {
 	}
 	std::string name;
 	uint8_t id;
-	uint8_t dir;
+	uint8_t dir = 8;
 	uint8_t x, y;
 };
 
@@ -140,13 +140,6 @@ int main(int argc, char **argv) {
 							return;
 						}
 						player.dir = c->recv_buffer[1];
-						/*uint8_t right_count = c->recv_buffer[2];
-						uint8_t down_count = c->recv_buffer[3];
-						uint8_t up_count = c->recv_buffer[4];
-						player.left_presses = left_count;
-						player.right_presses = right_count;
-						player.down_presses = down_count;
-						player.up_presses = up_count;*/
 
 						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 					}
@@ -171,17 +164,32 @@ int main(int argc, char **argv) {
 		// update player position
 		for (auto& [c, player] : players) {
 			(void)c;
-			if (player.dir == 0 && player.x > horizontal_border) {
+			if (player.dir == 8) continue; // none
+			if (player.dir % 4 == 0 && player.x > horizontal_border) { // left
 				player.x--;
 			}
-			else if (player.dir == 1 && player.x < NUM_COLS - 1 - horizontal_border) {
+			else if (player.dir % 4 == 1 && player.x < NUM_COLS - 1 - horizontal_border) { // right
 				player.x++;
 			}
-			else if (player.dir == 2 && player.y < NUM_ROWS - 1 - vertical_border) {
+			else if (player.dir % 4 == 2 && player.y < NUM_ROWS - 1 - vertical_border) { // up
 				player.y++;
 			}
-			else if (player.dir == 3 && player.y > vertical_border) {
+			else if (player.dir % 4 == 3 && player.y > vertical_border) { // down
 				player.y--;
+			}
+			if (3 < player.dir) { // ll/rr/uu/dd
+				if (player.dir % 4 == 0 && player.x > horizontal_border) { // left
+					player.x--;
+				}
+				else if (player.dir % 4 == 1 && player.x < NUM_COLS - 1 - horizontal_border) { // right
+					player.x++;
+				}
+				else if (player.dir % 4 == 2 && player.y < NUM_ROWS - 1 - vertical_border) { // up
+					player.y++;
+				}
+				else if (player.dir % 4 == 3 && player.y > vertical_border) { // down
+					player.y--;
+				}
 			}
 		}
 

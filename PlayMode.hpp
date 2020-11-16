@@ -30,6 +30,7 @@ struct PlayMode : Mode
 	const float TILE_SIZE = 20.0f;
 	const float BORDER_SIZE = 0.1f * TILE_SIZE;
 	const uint8_t TRAIL_MAX_LEN = 50;
+	const uint8_t TRAIL_POWERUP_LEN = 20;
 	const uint32_t WIN_THRESHOLD = NUM_ROWS * NUM_COLS / 2;
 
 	const float GRID_W = NUM_COLS * TILE_SIZE;
@@ -38,6 +39,7 @@ struct PlayMode : Mode
 
 	const uint32_t bg_color = 0x404040ff;
 	const uint32_t white_color = 0xffffffff;
+	const uint32_t black_color = 0x000000ff;
 	const uint32_t base_color = 0xe4ded2ff; // initial color of tiles
 	const uint32_t border_color = 0xd5cdd8ff;
 	const std::vector<uint32_t> player_colors{0x390099ff, 0x9e0059ff, 0xff5400ff, 0xffbd00ff};
@@ -48,13 +50,20 @@ struct PlayMode : Mode
 	uint8_t winner_id;
 	size_t winner_score = 0;
 
-	float total_elapsed = 0.0f;
+	// sound
+	float walk_frame = 0.0f;
+
+	enum Powerup { speed, trail, no_powerup };
+	int n_powerups = 2;
+	float powerup_cd = 10.0f;
+	bool start_cd = true;
 
 	struct Tile
 	{
 		Tile(uint32_t _color, uint8_t _age) : color(_color), age(_age) { }
 		uint32_t color;
 		uint8_t age; // for trail tiles
+		Powerup powerup = no_powerup;
 	};
 
 	std::vector<std::vector<Tile>> tiles; // logical representation of game state
@@ -68,6 +77,7 @@ struct PlayMode : Mode
 		uint32_t color;
 		glm::uvec2 pos;
 		glm::uvec2 prev_pos[2]; // previous 2 positions (for calculating loops)
+		Powerup powerup = no_powerup;
 		// prev_pos[0] = position 1 new position ago
 		// prev_pos[1] = position 2 new positions ago
 		std::shared_ptr< Sound::PlayingSample > walk_sound = nullptr;
@@ -75,7 +85,8 @@ struct PlayMode : Mode
 	std::unordered_map<uint8_t, Player> players;
 	uint8_t local_id; // player corresponding to this connection
 
-	enum Dir { left, right, up, down, none };
+	// ll, rr, uu, dd are for player with speed powerup
+	enum Dir { left, right, up, down, ll, rr, uu, dd, none };
 
 	//connection to server:
 	Client &client;
@@ -100,8 +111,8 @@ struct PlayMode : Mode
 	void init_tiles();
 
 	void create_player(uint8_t id, glm::uvec2 pos);
-	void update_player(Player *p, glm::uvec2 pos);
-	void update_sound(Player* p, bool moving);
+	void update_player(Player *p, glm::uvec2 pos, float elapsed);
+	void update_sound(Player* p, bool moving, float elapsed);
 
 	void draw_rectangle(glm::vec2 const &pos,
 						glm::vec2 const &size,
@@ -113,8 +124,10 @@ struct PlayMode : Mode
 	void draw_tiles(std::vector<Vertex> &vertices);
 	void draw_players(std::vector<Vertex> &vertices);
 
+	void new_powerup();
+
 	void win_game(uint8_t id, uint32_t area);
 	std::vector<glm::uvec2> shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector<glm::uvec2> const &allowed_tiles);
 	void floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color);
-	uint32_t fill_interior(uint32_t color);
+	void fill_interior(uint32_t color, uint32_t &delta_size, uint32_t &total_size);
 };

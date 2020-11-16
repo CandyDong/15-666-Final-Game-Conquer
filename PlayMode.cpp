@@ -19,8 +19,12 @@ Load< Sound::Sample > background_sample(LoadTagDefault, []() -> Sound::Sample co
 	return new Sound::Sample(data_path("background_track.opus"));
 });
 
-Load< Sound::Sample > walk_sample(LoadTagDefault, []() -> Sound::Sample const * {
-	return new Sound::Sample(data_path("walk.opus"));
+Load< Sound::Sample > walk_sample_0(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("walk_0.opus"));
+});
+
+Load< Sound::Sample > walk_sample_1(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("walk_1.opus"));
 });
 
 Load< Sound::Sample > connect_sample(LoadTagDefault, []() -> Sound::Sample const * {
@@ -144,19 +148,21 @@ void PlayMode::update(float elapsed) {
 		return;
 	}
 
-	total_elapsed += elapsed; // for frame calculations
-
 	//queue data for sending to server:
 	const uint8_t *key = SDL_GetKeyboardState(NULL);
 	Dir dir = none;
 	if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_A]) {
-		dir = left;
+		if (players.at(local_id).powerup == speed) dir = ll;
+		else dir = left;
 	} else if (key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_D]) {
-		dir = right;
+		if (players.at(local_id).powerup == speed) dir = rr;
+		else dir = right;
 	} else if (key[SDL_SCANCODE_UP] || key[SDL_SCANCODE_W]) {
-		dir = up;
+		if (players.at(local_id).powerup == speed) dir = uu;
+		else dir = up;
 	} else if (key[SDL_SCANCODE_DOWN] || key[SDL_SCANCODE_S]) {
-		dir = down;
+		if (players.at(local_id).powerup == speed) dir = dd;
+		else dir = down;
 	}
 
 	//send a two-byte message of type 'b':
@@ -164,7 +170,7 @@ void PlayMode::update(float elapsed) {
 	client.connections.back().send((uint8_t)dir);
 
 	//send/receive data:
-	client.poll([this](Connection* c, Connection::Event event) {
+	client.poll([this, elapsed](Connection* c, Connection::Event event) {
 		if (event == Connection::OnOpen) {
 			//std::cout << "[" << c->socket << "] opened" << std::endl;
 		}
@@ -199,7 +205,16 @@ void PlayMode::update(float elapsed) {
 							Sound::play(*connect_sample, 1.0f, 0.0f);
 							create_player(id, pos);
 						}
-						else update_player(&player->second, pos);
+						else {
+							Player* p = &player->second;
+							// std::cout << p->pos.x << ' ' << p->pos.y << ' ' << pos.x << ' ' << pos.y << '\n';
+							if (std::abs((int)p->pos.x - (int)pos.x) > 1 ||
+								std::abs((int)p->pos.y - (int)pos.y) > 1) { // moved 2 tiles
+								update_player(p, glm::vec2((p->pos.x + pos.x) / 2,
+									                       (p->pos.y + pos.y) / 2), elapsed);
+							}
+							update_player(p, pos, elapsed);
+						}
 					}
 					//and consume this part of the buffer:
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
@@ -223,6 +238,15 @@ void PlayMode::update(float elapsed) {
 			}
 		}
 	}, 0.0);
+
+	// update powerup
+	if (powerup_cd > 0.0f) {
+		powerup_cd -= elapsed;
+	}
+	else {
+		new_powerup();
+		powerup_cd = 10.0f;
+	}
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -346,7 +370,7 @@ void PlayMode::create_player(uint8_t id, glm::uvec2 pos) {
 	players.insert({ id, new_player });
 }
 
-void PlayMode::update_player(Player* p, glm::uvec2 pos) {
+void PlayMode::update_player(Player* p, glm::uvec2 pos, float elapsed) {
 	uint8_t x = pos.x;
 	uint8_t y = pos.y;
 	uint8_t id = p->id;
@@ -358,7 +382,7 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 		p->prev_pos[0] = p->pos;
 	}
 
-	update_sound(p, moving);
+	update_sound(p, moving, elapsed);
 
 	// update player's position
 	p->pos = pos;
@@ -368,25 +392,44 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 		for (int row = 0; row < NUM_ROWS; row++) {
 			if (tiles[col][row].color == trail_colors[id]) {
 				tiles[col][row].age++;
-				if (tiles[col][row].age >= TRAIL_MAX_LEN)
-					tiles[col][row].color = white_color;
+				if (p->powerup == trail) {
+					if (tiles[col][row].age >= TRAIL_MAX_LEN + TRAIL_POWERUP_LEN)
+						tiles[col][row].color = white_color;
+				}
+				else {
+					if (tiles[col][row].age >= TRAIL_MAX_LEN)
+						tiles[col][row].color = white_color;
+				}
 			}
 		}
+	}
+
+	// player gets powerup
+	if (tiles[x][y].powerup != no_powerup) {
+		p->powerup = tiles[x][y].powerup;
+		std::cout << tiles[x][y].powerup;
+		tiles[x][y].powerup = no_powerup;
+		powerup_cd = 10.0f;
 	}
 
 	// player enters their own territory
 	if (tiles[x][y].color == player_colors[id]) {
 		// update player's territory and clear player's trail
+		uint32_t trail_size = 0;
 		for (int col = 0; col < NUM_COLS; col++) {
 			for (int row = 0; row < NUM_ROWS; row++) {
 				if (tiles[col][row].color == trail_colors[id]) {
 					tiles[col][row].color = player_colors[id];
+					trail_size++;
 				}
 			}
 		}
 
-		uint32_t territory_size = fill_interior(player_colors[id]);
-		if (moving && territory_size > 0) { Sound::play(*success_sample, (p->id == local_id) ? 1.0f : 0.3f, 0.0f); }
+		uint32_t territory_size = 0; uint32_t delta_size = 0;
+		fill_interior(player_colors[id], delta_size, territory_size);
+		if (moving && (delta_size + trail_size) > 0) { 
+			Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
+		}
 
 		// check if player has won
 		if (territory_size > WIN_THRESHOLD) {
@@ -423,12 +466,17 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 			}
 
 			// add loop to territory
+			uint32_t trail_size = 0;
 			for (glm::uvec2 pos : path) {
 				tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = player_colors[id];
+				trail_size++;
 			}
 
-			uint32_t territory_size = fill_interior(player_colors[id]);
-			if (moving && territory_size > 0) { Sound::play(*success_sample, (p->id == local_id) ? 1.0f : 0.3f, 0.0f); }
+			uint32_t territory_size = 0; uint32_t delta_size = 0;
+			fill_interior(player_colors[id], delta_size, territory_size);
+			if (moving && (trail_size + delta_size) > 0) { 
+				Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
+			}
 
 			// check if player has won
 			if (territory_size > WIN_THRESHOLD) {
@@ -472,14 +520,24 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 	}
 }
 
-void PlayMode::update_sound(Player* p, bool moving) {
+void PlayMode::update_sound(Player* p, bool moving, float elapsed) {
 	if (!moving) {
-		if (p->walk_sound != nullptr) { p->walk_sound->stop(); }
+		if (p->walk_sound != nullptr) { 
+			p->walk_sound->stop(); }
 		return;
 	} 
-	float volume = 0.3f;
-	if (p->id == local_id) { volume = 1.0f; }
-	p->walk_sound = Sound::play(*walk_sample, volume, 0.0f);
+	float next_frame = walk_frame + 2.0f * elapsed / 0.1f;
+	while (next_frame > 2.0f) { next_frame -= 2.0f;}
+	if ((int)next_frame == (int)walk_frame) { 
+		walk_frame = next_frame; 
+		return;
+	}
+	walk_frame = next_frame;
+	float volume = 0.1f;
+	if (p->id == local_id) { volume = 0.3f; }
+	if ((int)walk_frame == 0) {p->walk_sound = Sound::play(*walk_sample_0, volume, 0.0f);}
+	else if ((int)walk_frame == 1) {p->walk_sound = Sound::play(*walk_sample_1, volume, 0.0f);}
+	
 }
 
 void PlayMode::draw_rectangle(glm::vec2 const &pos,
@@ -546,6 +604,12 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 				visual_board[x][y] = lerp_color(visual_board[x][y], tiles[x][y].color, 0.1f);
 			}
 			glm::u8vec4 color = hex_to_color_vec(visual_board[x][y]);
+
+			// draw powerup
+			if (tiles[x][y].powerup != no_powerup) {
+				color = hex_to_color_vec(black_color);
+				// std::cout << x << y << '\n';
+			}
 			
 			draw_rectangle(glm::vec2(x * TILE_SIZE, y * TILE_SIZE),
 			               glm::vec2(TILE_SIZE, TILE_SIZE),
@@ -584,6 +648,28 @@ void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 				vertices);
 		#endif
 	}
+}
+
+// clear powerup in tiles
+// clear player's powerup
+// create new random powerup in tiles
+void PlayMode::new_powerup() {
+	std::vector<glm::uvec2> empty_pos;
+	for (int x = horizontal_border; x < NUM_COLS - 1 - horizontal_border; x++) {
+		for (int y = vertical_border; y < NUM_ROWS - 1 - vertical_border; y++) {
+			tiles[x][y].powerup = no_powerup;
+			if (tiles[x][y].color == white_color) {
+				empty_pos.push_back(glm::uvec2(x, y));
+			}
+		}
+	}
+
+	for (auto& [id, player] : players) {
+		player.powerup = no_powerup;
+	}
+
+	int rnd_idx = rand() % empty_pos.size();
+	tiles[empty_pos[rnd_idx].x][empty_pos[rnd_idx].y].powerup = (Powerup)(rand() % n_powerups);
 }
 
 void PlayMode::win_game(uint8_t id, uint32_t area) {
@@ -690,12 +776,13 @@ void PlayMode::floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, u
 };
 
 // fills all regions enclosed by a player's color, returns new size of territory
-uint32_t PlayMode::fill_interior(uint32_t color) {
+void PlayMode::fill_interior(uint32_t color, uint32_t &delta_size, uint32_t &territory_size) {
 	const uint32_t EMPTY = 0;
 	const uint32_t BORDER = 1;
 	const uint32_t FILL = 2;
 
-	uint32_t territory_size = 0;
+	territory_size = 0;
+	delta_size = 0;
 
 	// create grid, adding a 1 tile border on all sides
 	std::vector<std::vector<uint32_t>> tiles_copy;
@@ -722,9 +809,10 @@ uint32_t PlayMode::fill_interior(uint32_t color) {
 			if (tiles_copy[x][y] == EMPTY && x - 1 >= 0 && y - 1 >= 0 && x - 1 < NUM_COLS && y - 1 < NUM_ROWS) {
 				tiles[x-1][y-1].color = color;
 				territory_size++;
+				delta_size++;
+				// std::cout << "(" << x << ", " << y << ")" << std::endl;
 			}
 		}
 	}
-
-	return territory_size;
+	return;
 }

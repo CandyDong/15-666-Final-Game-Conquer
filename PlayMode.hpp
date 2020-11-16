@@ -1,6 +1,7 @@
 #include "Mode.hpp"
 
 #include "Connection.hpp"
+#include "Sound.hpp"
 
 #include <glm/glm.hpp>
 #include <glm/gtx/hash.hpp>
@@ -47,6 +48,8 @@ struct PlayMode : Mode
 	uint8_t winner_id;
 	size_t winner_score = 0;
 
+	float total_elapsed = 0.0f;
+
 	struct Tile
 	{
 		Tile(uint32_t _color, uint8_t _age) : color(_color), age(_age) { }
@@ -67,6 +70,7 @@ struct PlayMode : Mode
 		glm::uvec2 prev_pos[2]; // previous 2 positions (for calculating loops)
 		// prev_pos[0] = position 1 new position ago
 		// prev_pos[1] = position 2 new positions ago
+		std::shared_ptr< Sound::PlayingSample > walk_sound = nullptr;
 	};
 	std::unordered_map<uint8_t, Player> players;
 	uint8_t local_id; // player corresponding to this connection
@@ -97,6 +101,7 @@ struct PlayMode : Mode
 
 	void create_player(uint8_t id, glm::uvec2 pos);
 	void update_player(Player *p, glm::uvec2 pos);
+	void update_sound(Player* p, bool moving);
 
 	void draw_rectangle(glm::vec2 const &pos,
 						glm::vec2 const &size,

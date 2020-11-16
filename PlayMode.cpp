@@ -8,10 +8,28 @@
 #include "glm/ext.hpp"
 #include "glm/gtx/string_cast.hpp"
 
+#include "Sound.hpp"
+
 #include <glm/gtc/type_ptr.hpp>
 
 #include <random>
 #include <queue>
+
+Load< Sound::Sample > background_sample(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("background_track.opus"));
+});
+
+Load< Sound::Sample > walk_sample(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("walk.opus"));
+});
+
+Load< Sound::Sample > connect_sample(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("connect.opus"));
+});
+
+Load< Sound::Sample > success_sample(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("success.opus"));
+});
 
 PlayMode::PlayMode(Client &client_) : client(client_) {
 	//----- allocate OpenGL resources -----
@@ -98,7 +116,11 @@ PlayMode::PlayMode(Client &client_) : client(client_) {
 
 		GL_ERRORS(); //PARANOIA: print out any OpenGL errors that may have happened
 	}
+	
 	init_tiles();
+
+	// start background music 
+	Sound::loop(*background_sample, 0.1f, 0.0f);
 }
 
 PlayMode::~PlayMode() {
@@ -122,8 +144,9 @@ void PlayMode::update(float elapsed) {
 		return;
 	}
 
-	//queue data for sending to server:
+	total_elapsed += elapsed; // for frame calculations
 
+	//queue data for sending to server:
 	const uint8_t *key = SDL_GetKeyboardState(NULL);
 	Dir dir = none;
 	if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_A]) {
@@ -172,7 +195,10 @@ void PlayMode::update(float elapsed) {
 						glm::vec2 pos = glm::vec2(x, y);
 
 						auto player = players.find(id);
-						if (player == players.end()) create_player(id, pos);
+						if (player == players.end()) {
+							Sound::play(*connect_sample, 1.0f, 0.0f);
+							create_player(id, pos);
+						}
 						else update_player(&player->second, pos);
 					}
 					//and consume this part of the buffer:
@@ -188,7 +214,7 @@ void PlayMode::update(float elapsed) {
 				}
 				else if (type == 'i') {
 					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
-					// uint8_t local_id = c->recv_buffer[1];
+					local_id = c->recv_buffer[1];
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
 				else {
@@ -314,6 +340,7 @@ void PlayMode::create_player(uint8_t id, glm::uvec2 pos) {
 
 	new_player.prev_pos[0] = pos;
 	new_player.prev_pos[1] = pos;
+
 	tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = trail_colors[id];
 
 	players.insert({ id, new_player });
@@ -330,6 +357,8 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 		p->prev_pos[1] = p->prev_pos[0];
 		p->prev_pos[0] = p->pos;
 	}
+
+	update_sound(p, moving);
 
 	// update player's position
 	p->pos = pos;
@@ -357,6 +386,7 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 		}
 
 		uint32_t territory_size = fill_interior(player_colors[id]);
+		if (moving && territory_size > 0) { Sound::play(*success_sample, (p->id == local_id) ? 1.0f : 0.3f, 0.0f); }
 
 		// check if player has won
 		if (territory_size > WIN_THRESHOLD) {
@@ -398,6 +428,7 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 			}
 
 			uint32_t territory_size = fill_interior(player_colors[id]);
+			if (moving && territory_size > 0) { Sound::play(*success_sample, (p->id == local_id) ? 1.0f : 0.3f, 0.0f); }
 
 			// check if player has won
 			if (territory_size > WIN_THRESHOLD) {
@@ -439,6 +470,16 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos) {
 		tiles[x][y].color = trail_colors[id];
 		tiles[x][y].age = 0;
 	}
+}
+
+void PlayMode::update_sound(Player* p, bool moving) {
+	if (!moving) {
+		if (p->walk_sound != nullptr) { p->walk_sound->stop(); }
+		return;
+	} 
+	float volume = 0.3f;
+	if (p->id == local_id) { volume = 1.0f; }
+	p->walk_sound = Sound::play(*walk_sample, volume, 0.0f);
 }
 
 void PlayMode::draw_rectangle(glm::vec2 const &pos,

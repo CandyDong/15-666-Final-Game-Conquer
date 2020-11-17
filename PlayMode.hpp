@@ -36,6 +36,7 @@ struct PlayMode : Mode
 	const float GRID_W = NUM_COLS * TILE_SIZE;
 	const float GRID_H = NUM_ROWS * TILE_SIZE;
 	const float PADDING = 50.0f;
+	const glm::uvec2 WINDOW_SIZE = glm::uvec2(1280, 720);
 
 	const uint32_t bg_color = 0x404040ff;
 	const uint32_t white_color = 0xffffffff;
@@ -94,6 +95,8 @@ struct PlayMode : Mode
 	// ----- texture ------
 	GLuint vertex_buffer = 0;
 	GLuint vertex_buffer_for_color_texture_program = 0;
+	GLuint tileset_tex = 0;
+	glm::vec2 tileset_size;
 
 	struct Vertex
 	{
@@ -123,6 +126,8 @@ struct PlayMode : Mode
 
 	void draw_tiles(std::vector<Vertex> &vertices);
 	void draw_players(std::vector<Vertex> &vertices);
+	void draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm::vec2 size, glm::vec2 tilepos, glm::vec2 tilesize, glm::u8vec4 color);
+	void draw_text(std::vector< Vertex >& vertices);
 
 	void new_powerup();
 

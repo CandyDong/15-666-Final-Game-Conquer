@@ -4,6 +4,7 @@
 #include "gl_errors.hpp"
 #include "data_path.hpp"
 #include "hex_dump.hpp"
+#include "load_save_png.hpp"
 #include "ColorTextureProgram.hpp"
 #include "glm/ext.hpp"
 #include "glm/gtx/string_cast.hpp"
@@ -93,32 +94,51 @@ PlayMode::PlayMode(Client &client_) : client(client_) {
 
 		GL_ERRORS(); //PARANOIA: print out any OpenGL errors that may have happened
 	}
-	{ //solid white texture:
-		//ask OpenGL to fill white_tex with the name of an unused texture object:
-		glGenTextures(1, &white_tex);
+	//{ //solid white texture:
+	//	//ask OpenGL to fill white_tex with the name of an unused texture object:
+	//	glGenTextures(1, &white_tex);
 
-		//bind that texture object as a GL_TEXTURE_2D-type texture:
-		glBindTexture(GL_TEXTURE_2D, white_tex);
+	//	//bind that texture object as a GL_TEXTURE_2D-type texture:
+	//	glBindTexture(GL_TEXTURE_2D, white_tex);
 
-		//upload a 1x1 image of solid white to the texture:
-		glm::uvec2 size = glm::uvec2(1,1);
-		std::vector< glm::u8vec4 > data(size.x*size.y, glm::u8vec4(0xff, 0xff, 0xff, 0xff));
+	//	//upload a 1x1 image of solid white to the texture:
+	//	glm::uvec2 size = glm::uvec2(1,1);
+	//	std::vector< glm::u8vec4 > data(size.x*size.y, glm::u8vec4(0xff, 0xff, 0xff, 0xff));
+	//	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
+
+	//	//set filtering and wrapping parameters:
+	//	//(it's a bit silly to mipmap a 1x1 texture, but I'm doing it because you may want to use this code to load different sizes of texture)
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+	//	//since texture uses a mipmap and we haven't uploaded one, instruct opengl to make one for us:
+	//	glGenerateMipmap(GL_TEXTURE_2D);
+
+	//	//Okay, texture uploaded, can unbind it:
+	//	glBindTexture(GL_TEXTURE_2D, 0);
+
+	//	GL_ERRORS(); //PARANOIA: print out any OpenGL errors that may have happened
+	//}
+	{ // load tileset texture
+		std::vector< glm::u8vec4 > data;
+		glm::uvec2 size(0, 0);
+		load_png(data_path("tileset.png"), &size, &data, UpperLeftOrigin);
+		tileset_size = size;
+
+		glGenTextures(1, &tileset_tex);
+
+		glBindTexture(GL_TEXTURE_2D, tileset_tex);
+
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
 
-		//set filtering and wrapping parameters:
-		//(it's a bit silly to mipmap a 1x1 texture, but I'm doing it because you may want to use this code to load different sizes of texture)
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-		//since texture uses a mipmap and we haven't uploaded one, instruct opengl to make one for us:
-		glGenerateMipmap(GL_TEXTURE_2D);
-
-		//Okay, texture uploaded, can unbind it:
 		glBindTexture(GL_TEXTURE_2D, 0);
 
-		GL_ERRORS(); //PARANOIA: print out any OpenGL errors that may have happened
+		GL_ERRORS();
 	}
 	
 	init_tiles();
@@ -135,8 +155,8 @@ PlayMode::~PlayMode() {
 	glDeleteVertexArrays(1, &vertex_buffer_for_color_texture_program);
 	vertex_buffer_for_color_texture_program = 0;
 
-	glDeleteTextures(1, &white_tex);
-	white_tex = 0;
+	/*glDeleteTextures(1, &white_tex);
+	white_tex = 0;*/
 }
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
@@ -284,7 +304,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	if (GAME_OVER) {
 		//TODO :use DrawLines to overlay some text
-
+		draw_text(vertices);
 	}
 	//NOTE: glm matrices are specified in *Column-Major* order,
 	// so each line above is specifying a *column* of the matrix(!)
@@ -319,7 +339,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	//bind the solid white texture to location zero so things will be drawn just with their colors:
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, white_tex);
+	glBindTexture(GL_TEXTURE_2D, tileset_tex);
 
 	//run the OpenGL pipeline:
 	glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
@@ -545,13 +565,13 @@ void PlayMode::draw_rectangle(glm::vec2 const &pos,
                         glm::u8vec4 const &color,
                         std::vector<Vertex> &vertices) {
     //draw rectangle as two CCW-oriented triangles:
-    vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
-    vertices.emplace_back(glm::vec3(pos.x+size.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
-    vertices.emplace_back(glm::vec3(pos.x+size.x, pos.y+size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y + size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
 
-    vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
-    vertices.emplace_back(glm::vec3(pos.x+size.x, pos.y+size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
-    vertices.emplace_back(glm::vec3(pos.x, pos.y+size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y + size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y + size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
 };
 
 void PlayMode::draw_borders(glm::u8vec4 const &color,
@@ -648,6 +668,42 @@ void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 				vertices);
 		#endif
 	}
+}
+
+void PlayMode::draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm::vec2 size, glm::vec2 tilepos, glm::vec2 tilesize, glm::u8vec4 color) {
+	tilepos = glm::vec2(tilepos.x * TILE_SIZE / tileset_size.x, tilepos.y * TILE_SIZE / tileset_size.y);
+	tilesize = glm::vec2(tilesize.x * TILE_SIZE / tileset_size.x, tilesize.y * TILE_SIZE / tileset_size.y);
+	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y, 0.0f), color, glm::vec2(tilepos.x + tilesize.x, tilepos.y));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y - size.y, 0.0f), color, glm::vec2(tilepos.x + tilesize.x, tilepos.y + tilesize.y));
+
+	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y - size.y, 0.0f), color, glm::vec2(tilepos.x + tilesize.x, tilepos.y + tilesize.y));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y - size.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y + tilesize.y));
+}
+
+void PlayMode::draw_text(std::vector< Vertex >& vertices) {
+	auto draw_string = [&](std::string str, glm::vec2 at, glm::u8vec4 color) {
+		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789. ";
+
+		for (int i = 0; i < str.size(); i++) {
+			for (int j = 0; j < alphabet.size(); j++) {
+				if (str[i] == alphabet[j]) {
+					float s = 2.5f;
+					draw_texture(vertices,
+						         at + (float)i * s * glm::vec2(12.0f, 0.0f),
+						         s * glm::vec2(11.0f, 13.0f),
+						         glm::vec2(0.0f, 7.0f) + (float)j * glm::vec2(11.0f / 20.0f, 0.0f),
+						         glm::vec2(11.0f / 20.0f, 13.0f / 20.0f),
+						         color);
+				}
+			}
+		}
+	};
+
+	std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
+	float width = msg.size() * 12.0f * 2.5f;
+	draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), hex_to_color_vec(0xff0000ff));
 }
 
 // clear powerup in tiles

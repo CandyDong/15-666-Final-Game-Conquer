@@ -686,8 +686,8 @@ void PlayMode::draw_text(std::vector< Vertex >& vertices) {
 	auto draw_string = [&](std::string str, glm::vec2 at, glm::u8vec4 color) {
 		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789. ";
 
-		for (int i = 0; i < str.size(); i++) {
-			for (int j = 0; j < alphabet.size(); j++) {
+		for (size_t i = 0; i < str.size(); i++) {
+			for (size_t j = 0; j < alphabet.size(); j++) {
 				if (str[i] == alphabet[j]) {
 					float s = 2.5f;
 					draw_texture(vertices,

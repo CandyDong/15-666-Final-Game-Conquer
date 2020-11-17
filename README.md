@@ -10,9 +10,11 @@ Alton Olson, Pengtao Ni, Qingyi Dong
 
 ## Design: <br/>
 
-This is a multiplayer player game played on a grid. Players can move in 4 directions. While moving, each player leaves a “trail”, which he can use to make an enclose an area to create territories. In order to win, a player needs to own more than half of the area on the entire board. Every 5-10 seconds, the board grows by a few tiles in all directions so as to avoid dominant strategies where players win by controlling the borders.
+This is a multiplayer player game played on a grid. Players can move in 4 directions. While moving, each player leaves a “trail”, which he can use to make an enclose an area to create territories. In order to win, a player needs to own more than half of the area on the entire board. 
 
-  
+Every 5-10 seconds, the board grows by a few tiles in all directions so as to avoid dominant strategies where players win by controlling the borders.
+
+For every fixed interval of time, a new power-up tile is spawn on the board. There are two types of power-up available as black tiles on the board. The player can either achieve a boost of speed or trail length by running over the tile containing power-ups. 
   
 
 ## Screen Shot:

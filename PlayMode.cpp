@@ -94,42 +94,43 @@ PlayMode::PlayMode(Client &client_) : client(client_) {
 
 		GL_ERRORS(); //PARANOIA: print out any OpenGL errors that may have happened
 	}
-	//{ //solid white texture:
-	//	//ask OpenGL to fill white_tex with the name of an unused texture object:
-	//	glGenTextures(1, &white_tex);
+	// { //solid white texture:
+	// 	//ask OpenGL to fill white_tex with the name of an unused texture object:
+	// 	glGenTextures(1, &white_tex);
 
-	//	//bind that texture object as a GL_TEXTURE_2D-type texture:
-	//	glBindTexture(GL_TEXTURE_2D, white_tex);
+	// 	//bind that texture object as a GL_TEXTURE_2D-type texture:
+	// 	glBindTexture(GL_TEXTURE_2D, white_tex);
 
-	//	//upload a 1x1 image of solid white to the texture:
-	//	glm::uvec2 size = glm::uvec2(1,1);
-	//	std::vector< glm::u8vec4 > data(size.x*size.y, glm::u8vec4(0xff, 0xff, 0xff, 0xff));
-	//	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
+	// 	//upload a 1x1 image of solid white to the texture:
+	// 	glm::uvec2 size = glm::uvec2(1,1);
+	// 	std::vector< glm::u8vec4 > data(size.x*size.y, glm::u8vec4(0xff, 0xff, 0xff, 0xff));
+	// 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
 
-	//	//set filtering and wrapping parameters:
-	//	//(it's a bit silly to mipmap a 1x1 texture, but I'm doing it because you may want to use this code to load different sizes of texture)
-	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	// 	//set filtering and wrapping parameters:
+	// 	//(it's a bit silly to mipmap a 1x1 texture, but I'm doing it because you may want to use this code to load different sizes of texture)
+	// 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	// 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	// 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	// 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-	//	//since texture uses a mipmap and we haven't uploaded one, instruct opengl to make one for us:
-	//	glGenerateMipmap(GL_TEXTURE_2D);
+	// 	//since texture uses a mipmap and we haven't uploaded one, instruct opengl to make one for us:
+	// 	glGenerateMipmap(GL_TEXTURE_2D);
 
-	//	//Okay, texture uploaded, can unbind it:
-	//	glBindTexture(GL_TEXTURE_2D, 0);
+	// 	//Okay, texture uploaded, can unbind it:
+	// 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	//	GL_ERRORS(); //PARANOIA: print out any OpenGL errors that may have happened
-	//}
+	// 	GL_ERRORS(); //PARANOIA: print out any OpenGL errors that may have happened
+	// }
 	{ // load tileset texture
 		std::vector< glm::u8vec4 > data;
 		glm::uvec2 size(0, 0);
-		load_png(data_path("tileset.png"), &size, &data, UpperLeftOrigin);
-		tileset_size = size;
+		load_png(data_path("sprite.png"), &size, &data, LowerLeftOrigin);
+		sprite_sheet_size = size;
+		std::cout << "sprite sheet size: " << glm::to_string(sprite_sheet_size) << std::endl;
 
-		glGenTextures(1, &tileset_tex);
+		glGenTextures(1, &sprite_tex);
 
-		glBindTexture(GL_TEXTURE_2D, tileset_tex);
+		glBindTexture(GL_TEXTURE_2D, sprite_tex);
 
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
 
@@ -155,8 +156,10 @@ PlayMode::~PlayMode() {
 	glDeleteVertexArrays(1, &vertex_buffer_for_color_texture_program);
 	vertex_buffer_for_color_texture_program = 0;
 
-	/*glDeleteTextures(1, &white_tex);
-	white_tex = 0;*/
+	// glDeleteTextures(1, &white_tex);
+	// white_tex = 0;
+	glDeleteTextures(1, &sprite_tex);
+	sprite_tex = 0;
 }
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
@@ -168,20 +171,22 @@ void PlayMode::update(float elapsed) {
 		return;
 	}
 
+	update_powerup(elapsed);
+
 	//queue data for sending to server:
 	const uint8_t *key = SDL_GetKeyboardState(NULL);
 	Dir dir = none;
 	if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_A]) {
-		if (players.at(local_id).powerup == speed) dir = ll;
+		if (players.at(local_id).powerup_type == speed) dir = ll;
 		else dir = left;
 	} else if (key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_D]) {
-		if (players.at(local_id).powerup == speed) dir = rr;
+		if (players.at(local_id).powerup_type == speed) dir = rr;
 		else dir = right;
 	} else if (key[SDL_SCANCODE_UP] || key[SDL_SCANCODE_W]) {
-		if (players.at(local_id).powerup == speed) dir = uu;
+		if (players.at(local_id).powerup_type == speed) dir = uu;
 		else dir = up;
 	} else if (key[SDL_SCANCODE_DOWN] || key[SDL_SCANCODE_S]) {
-		if (players.at(local_id).powerup == speed) dir = dd;
+		if (players.at(local_id).powerup_type == speed) dir = dd;
 		else dir = down;
 	}
 
@@ -216,6 +221,7 @@ void PlayMode::update(float elapsed) {
 					uint8_t byte_index = 2;
 					for (uint32_t k = 0; k < num_players; k++) {
 						uint8_t id = c->recv_buffer[byte_index++];
+						uint8_t dir = c->recv_buffer[byte_index++];
 						uint8_t x = c->recv_buffer[byte_index++];
 						uint8_t y = c->recv_buffer[byte_index++];
 						glm::vec2 pos = glm::vec2(x, y);
@@ -223,17 +229,17 @@ void PlayMode::update(float elapsed) {
 						auto player = players.find(id);
 						if (player == players.end()) {
 							Sound::play(*connect_sample, 1.0f, 0.0f);
-							create_player(id, pos);
+							create_player(id, (PlayMode::Dir)dir, pos);
 						}
 						else {
 							Player* p = &player->second;
 							// std::cout << p->pos.x << ' ' << p->pos.y << ' ' << pos.x << ' ' << pos.y << '\n';
 							if (std::abs((int)p->pos.x - (int)pos.x) > 1 ||
 								std::abs((int)p->pos.y - (int)pos.y) > 1) { // moved 2 tiles
-								update_player(p, glm::vec2((p->pos.x + pos.x) / 2,
+								update_player(p, (PlayMode::Dir)dir, glm::vec2((p->pos.x + pos.x) / 2,
 									                       (p->pos.y + pos.y) / 2), elapsed);
 							}
-							update_player(p, pos, elapsed);
+							update_player(p, (PlayMode::Dir)dir, pos, elapsed);
 						}
 					}
 					//and consume this part of the buffer:
@@ -250,6 +256,7 @@ void PlayMode::update(float elapsed) {
 				else if (type == 'i') {
 					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
 					local_id = c->recv_buffer[1];
+					std::cout << "local_id: " + std::to_string(local_id) << std::endl;
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
 				else {
@@ -303,8 +310,8 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	);
 
 	if (GAME_OVER) {
-		//TODO :use DrawLines to overlay some text
-		draw_text(vertices);
+		std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
+		draw_text(vertices, msg);
 	}
 	//NOTE: glm matrices are specified in *Column-Major* order,
 	// so each line above is specifying a *column* of the matrix(!)
@@ -339,7 +346,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	//bind the solid white texture to location zero so things will be drawn just with their colors:
 	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, tileset_tex);
+	glBindTexture(GL_TEXTURE_2D, sprite_tex);
 
 	//run the OpenGL pipeline:
 	glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
@@ -371,15 +378,15 @@ void PlayMode::init_tiles() {
 		std::vector<Tile> tile_col;
 		std::vector<uint32_t> visual_board_col;
 		for (int row = 0; row < NUM_ROWS; row++) {
-			tile_col.emplace_back(white_color, 0);
-			visual_board_col.push_back(white_color);
+			tile_col.emplace_back(base_color, 0);
+			visual_board_col.push_back(base_color);
 		}
 		tiles.push_back(tile_col);
 		visual_board.push_back(visual_board_col);
 	}
 }
 
-void PlayMode::create_player(uint8_t id, glm::uvec2 pos) {
+void PlayMode::create_player(uint8_t id, Dir dir, glm::uvec2 pos) {
 	Player new_player = { id, player_colors[id], pos };
 
 	new_player.prev_pos[0] = pos;
@@ -390,7 +397,7 @@ void PlayMode::create_player(uint8_t id, glm::uvec2 pos) {
 	players.insert({ id, new_player });
 }
 
-void PlayMode::update_player(Player* p, glm::uvec2 pos, float elapsed) {
+void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) {
 	uint8_t x = pos.x;
 	uint8_t y = pos.y;
 	uint8_t id = p->id;
@@ -400,35 +407,42 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos, float elapsed) {
 	if (moving) {
 		p->prev_pos[1] = p->prev_pos[0];
 		p->prev_pos[0] = p->pos;
+		// update walk frame
+		float next_frame = p->walk_frame + 2.0f * elapsed / 0.1f;
+		while (next_frame > 2.0f) { next_frame -= 2.0f;}
+		p->walk_frame = next_frame; 
+	} else {
+		p->walk_frame = 1.0f;
 	}
 
-	update_sound(p, moving, elapsed);
+	// update_sound(p, moving, elapsed);
 
 	// update player's position
 	p->pos = pos;
+	if (dir != none) { p->dir = dir; }
 
 	// update and trim player's trails
 	for (int col = 0; col < NUM_COLS; col++) {
 		for (int row = 0; row < NUM_ROWS; row++) {
 			if (tiles[col][row].color == trail_colors[id]) {
 				tiles[col][row].age++;
-				if (p->powerup == trail) {
+				if (p->powerup_type == trail) {
 					if (tiles[col][row].age >= TRAIL_MAX_LEN + TRAIL_POWERUP_LEN)
-						tiles[col][row].color = white_color;
+						tiles[col][row].color = base_color;
 				}
 				else {
 					if (tiles[col][row].age >= TRAIL_MAX_LEN)
-						tiles[col][row].color = white_color;
+						tiles[col][row].color = base_color;
 				}
 			}
 		}
 	}
 
 	// player gets powerup
-	if (tiles[x][y].powerup != no_powerup) {
-		p->powerup = tiles[x][y].powerup;
-		std::cout << tiles[x][y].powerup;
-		tiles[x][y].powerup = no_powerup;
+	if (tiles[x][y].powerup.type != no_powerup) {
+		p->powerup_type = tiles[x][y].powerup.type;
+		// std::cout << tiles[x][y].powerup;
+		tiles[x][y].powerup.type = no_powerup;
 		powerup_cd = 10.0f;
 	}
 
@@ -482,7 +496,7 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos, float elapsed) {
 			allowed_tiles.push_back(p->prev_pos[0]); // re-add previous tile
 			for (auto allowed_pos : allowed_tiles) {
 				if (tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color == trail_colors[id])
-					tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color = white_color;
+					tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color = base_color;
 			}
 
 			// add loop to territory
@@ -505,14 +519,14 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos, float elapsed) {
 		}
 	}
 	// player hits other player's trail or territory
-	else if (tiles[x][y].color != white_color) {
+	else if (tiles[x][y].color != base_color) {
 		// hit other player's territory:
 		if (std::find(player_colors.begin(), player_colors.end(), tiles[x][y].color) != player_colors.end()) {
 			// clear own trail
 			for (int col = 0; col < NUM_COLS; col++) {
 				for (int row = 0; row < NUM_ROWS; row++) {
 					if (tiles[col][row].color == trail_colors[id]) {
-						tiles[col][row].color = white_color;
+						tiles[col][row].color = base_color;
 					}
 				}
 			}
@@ -524,7 +538,7 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos, float elapsed) {
 			for (int col = 0; col < NUM_COLS; col++) {
 				for (int row = 0; row < NUM_ROWS; row++) {
 					if (tiles[col][row].color == other_player_trail_color) {
-						tiles[col][row].color = white_color;
+						tiles[col][row].color = base_color;
 					}
 				}
 			}
@@ -540,38 +554,42 @@ void PlayMode::update_player(Player* p, glm::uvec2 pos, float elapsed) {
 	}
 }
 
-void PlayMode::update_sound(Player* p, bool moving, float elapsed) {
-	if (!moving) {
-		if (p->walk_sound != nullptr) { 
-			p->walk_sound->stop(); }
-		return;
-	} 
-	float next_frame = walk_frame + 2.0f * elapsed / 0.1f;
-	while (next_frame > 2.0f) { next_frame -= 2.0f;}
-	if ((int)next_frame == (int)walk_frame) { 
-		walk_frame = next_frame; 
-		return;
-	}
-	walk_frame = next_frame;
-	float volume = 0.1f;
-	if (p->id == local_id) { volume = 0.3f; }
-	if ((int)walk_frame == 0) {p->walk_sound = Sound::play(*walk_sample_0, volume, 0.0f);}
-	else if ((int)walk_frame == 1) {p->walk_sound = Sound::play(*walk_sample_1, volume, 0.0f);}
+// TODO(candy): update this function so that max walk_frame = 3.0f
+// void PlayMode::update_sound(Player* p, bool moving, float elapsed) {
+// 	if (!moving) {
+// 		if (p->walk_sound != nullptr) { 
+// 			p->walk_sound->stop(); }
+// 		return;
+// 	} 
+// 	float next_frame = walk_frame + 2.0f * elapsed / 0.1f;
+// 	while (next_frame > 2.0f) { next_frame -= 2.0f;}
+// 	if ((int)next_frame == (int)walk_frame) { 
+// 		walk_frame = next_frame; 
+// 		return;
+// 	}
+// 	walk_frame = next_frame;
+// 	float volume = 0.1f;
+// 	if (p->id == local_id) { volume = 0.3f; }
+// 	if ((int)walk_frame == 0) {p->walk_sound = Sound::play(*walk_sample_0, volume, 0.0f);}
+// 	else if ((int)walk_frame == 1) {p->walk_sound = Sound::play(*walk_sample_1, volume, 0.0f);}
 	
-}
+// }
 
 void PlayMode::draw_rectangle(glm::vec2 const &pos,
                         glm::vec2 const &size,
                         glm::u8vec4 const &color,
                         std::vector<Vertex> &vertices) {
     //draw rectangle as two CCW-oriented triangles:
-	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
-	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
-	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y + size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(1.0f-SPRITE_SIZE/sprite_sheet_size.x, 
+																		1.0f-SPRITE_SIZE/sprite_sheet_size.y));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y, 0.0f), color, glm::vec2(1.0f-SPRITE_SIZE/sprite_sheet_size.x, 
+																		1.0f));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y + size.y, 0.0f), color, glm::vec2(1.0f, 1.0f));
 
-	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
-	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y + size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
-	vertices.emplace_back(glm::vec3(pos.x, pos.y + size.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(1.0f-SPRITE_SIZE/sprite_sheet_size.x, 
+																		1.0f-SPRITE_SIZE/sprite_sheet_size.y));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y + size.y, 0.0f), color, glm::vec2(1.0f, 1.0f));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y + size.y, 0.0f), color, glm::vec2(1.0f, 1.0f-SPRITE_SIZE/sprite_sheet_size.y));
 };
 
 void PlayMode::draw_borders(glm::u8vec4 const &color,
@@ -617,7 +635,8 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 					break;
 				}
 			}
-			if (tiles[x][y].color == white_color || is_trail_color) {
+
+			if (tiles[x][y].color == base_color || is_trail_color) {
 				visual_board[x][y] = tiles[x][y].color;
 			}
 			else {
@@ -625,16 +644,35 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 			}
 			glm::u8vec4 color = hex_to_color_vec(visual_board[x][y]);
 
-			// draw powerup
-			if (tiles[x][y].powerup != no_powerup) {
-				color = hex_to_color_vec(black_color);
-				// std::cout << x << y << '\n';
-			}
-			
+			// draw_texture(vertices, glm::vec2(x * TILE_SIZE, y * TILE_SIZE), 
+			// 		glm::vec2(TILE_SIZE, TILE_SIZE),
+			// 		glm::vec2(0.0f, 9.0f),
+			// 		glm::vec2(1.0f, 1.0f),
+			// 		glm::u8vec4(255, 255, 255, 255));
 			draw_rectangle(glm::vec2(x * TILE_SIZE, y * TILE_SIZE),
-			               glm::vec2(TILE_SIZE, TILE_SIZE),
-			               color,
-			               vertices);
+						glm::vec2(TILE_SIZE, TILE_SIZE),
+						color,
+						vertices);
+
+			// if (is_trail_color) {
+			// 	draw_texture(vertices, glm::vec2(x * TILE_SIZE, y * TILE_SIZE), 
+			// 		glm::vec2(TILE_SIZE, TILE_SIZE),
+			// 		glm::vec2(0.0f, 13.0f),
+			// 		glm::vec2(1.0f, 1.0f),
+			// 		glm::u8vec4(255, 255, 255, 255));
+			// }	
+			
+			// draw powerup
+			if (tiles[x][y].powerup.type != no_powerup) {
+				// color = hex_to_color_vec(black_color);
+				draw_texture(vertices, glm::vec2(x * TILE_SIZE, y * TILE_SIZE), 
+					glm::vec2(TILE_SIZE, TILE_SIZE),
+					glm::vec2((int)tiles[x][y].powerup.frame, 
+							tiles[x][y].powerup.type == speed ? 5.0f : 4.0f),
+					glm::vec2(1.0f, 1.0f),
+					glm::u8vec4(255, 255, 255, 255));
+				// std::cout << x << y << '\n';
+			} 
 		}
 	}
 
@@ -649,14 +687,44 @@ void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 	for (auto& [id, player] : players) {
 		(void) id; // appease compiler's unused variable warning
 		// draw player
-		draw_rectangle(glm::vec2(player.pos.x * TILE_SIZE, player.pos.y * TILE_SIZE),
-			glm::vec2(TILE_SIZE, TILE_SIZE),
-			hex_to_color_vec(player.color),
-			vertices);
-		draw_rectangle(glm::vec2(player.pos.x * TILE_SIZE + TILE_SIZE / 4, player.pos.y * TILE_SIZE + TILE_SIZE / 4),
-			glm::vec2(TILE_SIZE / 2, TILE_SIZE / 2),
-			hex_to_color_vec(white_color),
-			vertices);
+		// std::cout << "id: " + std::to_string(player.id) << " dir: " + std::to_string(player.dir) << std::endl;
+		glm::vec2 tex_pos;
+		switch(player.dir) {
+			case left:
+			case ll:
+				tex_pos.y = 2.0f;
+				break;
+			case right:
+			case rr:
+				tex_pos.y = 1.0f;
+				break;
+			case up:
+			case uu:
+				tex_pos.y = 0.0f;
+				break;
+			case down:
+			case dd:
+				tex_pos.y = 3.0f;
+				break;
+			case none: // initial state
+				tex_pos.y = 3.0f;
+				break;
+		}
+		tex_pos.x = player.id*3.0f + (int)player.walk_frame;
+
+		draw_texture(vertices, glm::vec2(player.pos.x * TILE_SIZE, player.pos.y * TILE_SIZE), 
+					glm::vec2(TILE_SIZE, TILE_SIZE),
+					tex_pos,
+					glm::vec2(1.0f, 1.0f),
+					glm::u8vec4(255, 255, 255, 255));
+		// draw_rectangle(glm::vec2(player.pos.x * TILE_SIZE, player.pos.y * TILE_SIZE),
+		// 	glm::vec2(TILE_SIZE, TILE_SIZE),
+		// 	hex_to_color_vec(player.color),
+		// 	vertices);
+		// draw_rectangle(glm::vec2(player.pos.x * TILE_SIZE + TILE_SIZE / 4, player.pos.y * TILE_SIZE + TILE_SIZE / 4),
+		// 	glm::vec2(TILE_SIZE / 2, TILE_SIZE / 2),
+		// 	hex_to_color_vec(white_color),
+		// 	vertices);
 		#ifdef DEBUG_TRAIL
 			draw_rectangle(glm::vec2(player.prev_pos[0].x * TILE_SIZE, player.prev_pos[0].y * TILE_SIZE),
 				glm::vec2(TILE_SIZE, TILE_SIZE),
@@ -671,18 +739,19 @@ void PlayMode::draw_players(std::vector<Vertex>& vertices) {
 }
 
 void PlayMode::draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm::vec2 size, glm::vec2 tilepos, glm::vec2 tilesize, glm::u8vec4 color) {
-	tilepos = glm::vec2(tilepos.x * TILE_SIZE / tileset_size.x, tilepos.y * TILE_SIZE / tileset_size.y);
-	tilesize = glm::vec2(tilesize.x * TILE_SIZE / tileset_size.x, tilesize.y * TILE_SIZE / tileset_size.y);
+	tilepos = glm::vec2(tilepos.x * SPRITE_SIZE / sprite_sheet_size.x, tilepos.y * SPRITE_SIZE / sprite_sheet_size.y);
+	tilesize = glm::vec2(tilesize.x * SPRITE_SIZE / sprite_sheet_size.x, tilesize.y * SPRITE_SIZE / sprite_sheet_size.y);
+	// std::cout << "tilepos: " + glm::to_string(tilepos) + ", tilesize: " + glm::to_string(tilesize) << std::endl;
 	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y));
 	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y, 0.0f), color, glm::vec2(tilepos.x + tilesize.x, tilepos.y));
-	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y - size.y, 0.0f), color, glm::vec2(tilepos.x + tilesize.x, tilepos.y + tilesize.y));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y + size.y, 0.0f), color, glm::vec2(tilepos.x + tilesize.x, tilepos.y + tilesize.y));
 
 	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y));
-	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y - size.y, 0.0f), color, glm::vec2(tilepos.x + tilesize.x, tilepos.y + tilesize.y));
-	vertices.emplace_back(glm::vec3(pos.x, pos.y - size.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y + tilesize.y));
+	vertices.emplace_back(glm::vec3(pos.x + size.x, pos.y + size.y, 0.0f), color, glm::vec2(tilepos.x + tilesize.x, tilepos.y + tilesize.y));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y + size.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y + tilesize.y));
 }
 
-void PlayMode::draw_text(std::vector< Vertex >& vertices) {
+void PlayMode::draw_text(std::vector< Vertex >& vertices, std::string msg) {
 	auto draw_string = [&](std::string str, glm::vec2 at, glm::u8vec4 color) {
 		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789. ";
 
@@ -690,18 +759,17 @@ void PlayMode::draw_text(std::vector< Vertex >& vertices) {
 			for (size_t j = 0; j < alphabet.size(); j++) {
 				if (str[i] == alphabet[j]) {
 					float s = 2.5f;
-					draw_texture(vertices,
+ 					draw_texture(vertices,
 						         at + (float)i * s * glm::vec2(12.0f, 0.0f),
 						         s * glm::vec2(11.0f, 13.0f),
-						         glm::vec2(0.0f, 7.0f) + (float)j * glm::vec2(11.0f / 20.0f, 0.0f),
-						         glm::vec2(11.0f / 20.0f, 13.0f / 20.0f),
+						         glm::vec2((float)j * 11.0f / SPRITE_SIZE, 15.0f),
+						         glm::vec2(11.0f / SPRITE_SIZE, 13.0f / SPRITE_SIZE),
 						         color);
 				}
 			}
 		}
 	};
 
-	std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
 	float width = msg.size() * 12.0f * 2.5f;
 	draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), hex_to_color_vec(0xff0000ff));
 }
@@ -713,8 +781,8 @@ void PlayMode::new_powerup() {
 	std::vector<glm::uvec2> empty_pos;
 	for (int x = horizontal_border; x < NUM_COLS - 1 - horizontal_border; x++) {
 		for (int y = vertical_border; y < NUM_ROWS - 1 - vertical_border; y++) {
-			tiles[x][y].powerup = no_powerup;
-			if (tiles[x][y].color == white_color) {
+			tiles[x][y].powerup.type = no_powerup;
+			if (tiles[x][y].color == base_color) {
 				empty_pos.push_back(glm::uvec2(x, y));
 			}
 		}
@@ -722,11 +790,24 @@ void PlayMode::new_powerup() {
 
 	for (auto& [id, player] : players) {
 		(void) id;
-		player.powerup = no_powerup;
+		player.powerup_type = no_powerup;
 	}
 
 	int rnd_idx = rand() % empty_pos.size();
-	tiles[empty_pos[rnd_idx].x][empty_pos[rnd_idx].y].powerup = (Powerup)(rand() % n_powerups);
+	tiles[empty_pos[rnd_idx].x][empty_pos[rnd_idx].y].powerup.type = (PowerupType)(rand() % n_powerups);
+	tiles[empty_pos[rnd_idx].x][empty_pos[rnd_idx].y].powerup.frame = 0.0f;
+}
+
+void PlayMode::update_powerup(float elapsed) {
+	for (int x = horizontal_border; x < NUM_COLS - 1 - horizontal_border; x++) {
+		for (int y = vertical_border; y < NUM_ROWS - 1 - vertical_border; y++) {
+			if (tiles[x][y].powerup.type == no_powerup) { continue; }
+			float num_frames = tiles[x][y].powerup.type == speed ? 4.0f : 5.0f; 
+			float next_frame = tiles[x][y].powerup.frame + num_frames * elapsed / 0.5f;
+			while (next_frame > num_frames) { next_frame -= num_frames;}
+			tiles[x][y].powerup.frame = next_frame; 
+		}
+	}
 }
 
 void PlayMode::win_game(uint8_t id, uint32_t area) {

@@ -11,8 +11,8 @@
 #include <deque>
 #include <algorithm>
 
-const uint8_t NUM_ROWS = 50;
-const uint8_t NUM_COLS = 80;
+const uint8_t NUM_ROWS = 20;
+const uint8_t NUM_COLS = 40;
 const uint8_t MAX_NUM_PLAYERS = 4;
 
 struct Uvec2 {
@@ -215,6 +215,7 @@ int main(int argc, char **argv) {
 			for (auto& [c_prime, player_prime] : players) {
 				(void)c_prime;
 				c->send(uint8_t(player_prime.id));
+				c->send(uint8_t(player_prime.dir));
 				c->send(uint8_t(player_prime.x));
 				c->send(uint8_t(player_prime.y));
 			}

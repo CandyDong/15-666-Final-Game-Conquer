@@ -25,8 +25,8 @@ struct PlayMode : Mode
 	virtual void draw(glm::uvec2 const &drawable_size) override;
 
 	//----- constants ------
-	const uint8_t NUM_ROWS = 50;
-	const uint8_t NUM_COLS = 80;
+	const uint8_t NUM_ROWS = 20;
+	const uint8_t NUM_COLS = 40;
 	const float TILE_SIZE = 20.0f;
 	const float BORDER_SIZE = 0.1f * TILE_SIZE;
 	const uint8_t TRAIL_MAX_LEN = 50;
@@ -41,35 +41,43 @@ struct PlayMode : Mode
 	const uint32_t bg_color = 0x404040ff;
 	const uint32_t white_color = 0xffffffff;
 	const uint32_t black_color = 0x000000ff;
-	const uint32_t base_color = 0xe4ded2ff; // initial color of tiles
+	// const uint32_t base_color = 0x381d35ff; // initial color of tiles
+	const uint32_t base_color = white_color;
 	const uint32_t border_color = 0xd5cdd8ff;
-	const std::vector<uint32_t> player_colors{0x390099ff, 0x9e0059ff, 0xff5400ff, 0xffbd00ff};
-	const std::vector<uint32_t> trail_colors{0x8762c5ff, 0xca679fff, 0xffa980ff, 0xffdf83ff};
+	const std::vector<uint32_t> player_colors{0x390099ff, 0xffbd00ff, 0xff5400ff, 0x9e0059ff};
+	const std::vector<uint32_t> trail_colors{0x8762c5ff,  0xffdf83ff, 0xffa980ff, 0xca679fff};
 
 	//----- game state -----
+	float total_elapsed = 0.0f;
+
 	bool GAME_OVER = false;
 	uint8_t winner_id;
 	size_t winner_score = 0;
 
-	// sound
-	float walk_frame = 0.0f;
-
-	enum Powerup { speed, trail, no_powerup };
+	enum PowerupType { speed, trail, no_powerup };
 	int n_powerups = 2;
 	float powerup_cd = 10.0f;
 	bool start_cd = true;
+	struct Powerup {
+		Powerup(PowerupType _type) : type(_type) { }
+		PowerupType type;
+		float frame = 0.0f;
+	};
 
 	struct Tile
 	{
 		Tile(uint32_t _color, uint8_t _age) : color(_color), age(_age) { }
 		uint32_t color;
 		uint8_t age; // for trail tiles
-		Powerup powerup = no_powerup;
+		Powerup powerup = Powerup(no_powerup);
 	};
 
 	std::vector<std::vector<Tile>> tiles; // logical representation of game state
 	std::vector<std::vector<uint32_t>> visual_board; // visual representation of game state
 	uint8_t horizontal_border, vertical_border; // "walls"
+
+	// ll, rr, uu, dd are for player with speed powerup
+	enum Dir { left, right, up, down, ll, rr, uu, dd, none };
 
 	struct Player
 	{
@@ -78,16 +86,15 @@ struct PlayMode : Mode
 		uint32_t color;
 		glm::uvec2 pos;
 		glm::uvec2 prev_pos[2]; // previous 2 positions (for calculating loops)
-		Powerup powerup = no_powerup;
+		PowerupType powerup_type = no_powerup;
+		Dir dir = none; // current facing direction for sprite rendering
 		// prev_pos[0] = position 1 new position ago
 		// prev_pos[1] = position 2 new positions ago
 		std::shared_ptr< Sound::PlayingSample > walk_sound = nullptr;
+		float walk_frame = 1.0f;
 	};
 	std::unordered_map<uint8_t, Player> players;
 	uint8_t local_id; // player corresponding to this connection
-
-	// ll, rr, uu, dd are for player with speed powerup
-	enum Dir { left, right, up, down, ll, rr, uu, dd, none };
 
 	//connection to server:
 	Client &client;
@@ -95,8 +102,9 @@ struct PlayMode : Mode
 	// ----- texture ------
 	GLuint vertex_buffer = 0;
 	GLuint vertex_buffer_for_color_texture_program = 0;
-	GLuint tileset_tex = 0;
-	glm::vec2 tileset_size;
+	GLuint sprite_tex = 0;
+	glm::vec2 sprite_sheet_size;
+	const float SPRITE_SIZE = 16.0f;
 
 	struct Vertex
 	{
@@ -113,8 +121,8 @@ struct PlayMode : Mode
 	glm::u8vec4 hex_to_color_vec(int color_hex);
 	void init_tiles();
 
-	void create_player(uint8_t id, glm::uvec2 pos);
-	void update_player(Player *p, glm::uvec2 pos, float elapsed);
+	void create_player(uint8_t id, Dir dir, glm::uvec2 pos);
+	void update_player(Player *p, Dir dir, glm::uvec2 pos, float elapsed);
 	void update_sound(Player* p, bool moving, float elapsed);
 
 	void draw_rectangle(glm::vec2 const &pos,
@@ -127,9 +135,10 @@ struct PlayMode : Mode
 	void draw_tiles(std::vector<Vertex> &vertices);
 	void draw_players(std::vector<Vertex> &vertices);
 	void draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm::vec2 size, glm::vec2 tilepos, glm::vec2 tilesize, glm::u8vec4 color);
-	void draw_text(std::vector< Vertex >& vertices);
+	void draw_text(std::vector< Vertex >& vertices, std::string msg);
 
 	void new_powerup();
+	void update_powerup(float elapsed);
 
 	void win_game(uint8_t id, uint32_t area);
 	std::vector<glm::uvec2> shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector<glm::uvec2> const &allowed_tiles);

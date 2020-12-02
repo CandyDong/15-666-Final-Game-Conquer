@@ -13,7 +13,7 @@
 
 const uint8_t NUM_ROWS = 20;
 const uint8_t NUM_COLS = 40;
-const uint8_t MAX_NUM_PLAYERS = 4;
+//const uint8_t MAX_NUM_PLAYERS = 4;
 const uint8_t START_GAME_PLAYERS = 2; // TODO support 4 player games
 const uint8_t START_HORIZONTAL_BORDER = (NUM_COLS - 20) / 2;
 const uint8_t START_VERTICAL_BORDER = (NUM_ROWS - 20) / 2;

@@ -699,7 +699,7 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 
 			if (is_trail_color) {
 				// do not draw the first trail tile which overlaps with the player
-				uint8_t player_id = trail_it - trail_colors.begin();
+				uint8_t player_id = (uint8_t) (trail_it - trail_colors.begin());
 				Player player = players.at(player_id);
 				if (glm::uvec2(x, y) == player.pos) {
 					color = hex_to_color_vec(base_color);

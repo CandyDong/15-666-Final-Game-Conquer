@@ -777,13 +777,12 @@ void PlayMode::draw_text(std::vector< Vertex >& vertices) {
 		float width = msg.size() * 12.0f * 2.5f;
 		draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), hex_to_color_vec(player_colors[winner_id]));
 	} else {
-		
 		size_t num_players = players.size();
 		size_t i = 0;
 		for (auto &[id, player] : players) {
 			std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
 			float width = msg.size() * 12.0f * 2.5f;
-			draw_string(msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
+			draw_string(msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1) - 0.5f * width, (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
 			i++;
 		}
 		

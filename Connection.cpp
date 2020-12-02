@@ -38,6 +38,7 @@ typedef int ssize_t;
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <system_error>
 
 //NOTE: much of the sockets code herein is based on http-tweak's single-header http server
 // see: https://github.com/ixchow/http-tweak

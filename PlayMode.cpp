@@ -218,7 +218,7 @@ void PlayMode::update(float elapsed) {
 				if (type == 'a') {
 					uint32_t num_players = uint8_t(c->recv_buffer[1]);
 					//std::cout << "num_players=" << num_players << std::endl;
-					if (c->recv_buffer.size() < 2 + num_players * 3) break; //if whole message isn't here, can't process
+					if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
 					//whole message *is* here, so set current server message:
 
 					uint8_t byte_index = 2;
@@ -314,7 +314,14 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	if (GAME_OVER) {
 		std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
-		draw_text(vertices, msg, glm::vec2(GRID_W/0.5f, GRID_H/0.5f), hex_to_color_vec(white_color));
+		draw_text(vertices, msg, glm::vec2(GRID_W/0.5f, GRID_H/0.5f), hex_to_color_vec(player_colors[winner_id]));
+	} 
+	size_t num_players = players.size();
+	size_t i = 0;
+	for (auto &[id, player] : players) {
+		std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
+		draw_text(vertices, msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
+		i++;
 	}
 
 	//---- actual drawing ----
@@ -501,6 +508,8 @@ void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) 
 			Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
 		}
 
+		update_areas();
+
 		// check if player has won
 		if (territory_size > WIN_THRESHOLD) {
 			win_game(id, territory_size);
@@ -547,6 +556,8 @@ void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) 
 			if (moving && (trail_size + delta_size) > 0) { 
 				Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
 			}
+
+			update_areas();
 
 			// check if player has won
 			if (territory_size > WIN_THRESHOLD) {
@@ -979,4 +990,22 @@ void PlayMode::fill_interior(uint32_t color, uint32_t &delta_size, uint32_t &ter
 		}
 	}
 	return;
+}
+
+void PlayMode::update_areas() {
+	for (auto &[id, player] : players) {
+		(void) id;
+		player.area = 0;
+	}
+	for (int x = 0; x < NUM_COLS; x++) {
+		for (int y = 0; y < NUM_ROWS; y++) {
+			if (tiles[x][y].color != white_color) {
+				for (uint32_t i = 0; i < player_colors.size(); i++) {
+					if (tiles[x][y].color == player_colors[i]) {
+						players.at(i).area++;
+					}
+				}
+			}
+		}
+	}
 }

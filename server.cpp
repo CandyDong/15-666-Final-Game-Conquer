@@ -163,8 +163,8 @@ int main(int argc, char **argv) {
 			horizontal_border = std::max(0, horizontal_border - BORDER_DECREMENT);
 			vertical_border = std::max(0, vertical_border - BORDER_DECREMENT);
 
-			for (auto& [c, player] : players) {
-				(void)player; //work around "unused variable" warning on whatever g++ github actions uses
+			for (auto& it : players) {
+        auto& c = it.first;
 				c->send('g');
 				c->send(uint8_t(horizontal_border));
 				c->send(uint8_t(vertical_border));
@@ -174,8 +174,8 @@ int main(int argc, char **argv) {
 		//update current game state
 		//TODO: replace with *your* game state update
 		// update player position
-		for (auto& [c, player] : players) {
-			(void)c;
+		for (auto& it : players) {
+      auto& player = it.second;
 			if (player.dir == 8) continue; // none
 			if (player.dir % 4 == 0 && player.x > horizontal_border) { // left
 				player.x--;
@@ -207,13 +207,13 @@ int main(int argc, char **argv) {
 
 		//send updated game state to all clients
 		//TODO: update for your game state
-		for (auto& [c, player] : players) {
-			(void)player; //work around "unused variable" warning on whatever g++ github actions uses
+		for (auto& it : players) {
+      auto& c = it.first;
 			c->send('a');
 			c->send(uint8_t(players.size()));
 			// send along all player info
-			for (auto& [c_prime, player_prime] : players) {
-				(void)c_prime;
+			for (auto& it_prime : players) {
+        auto& player_prime = it_prime.second;
 				c->send(uint8_t(player_prime.id));
 				c->send(uint8_t(player_prime.dir));
 				c->send(uint8_t(player_prime.x));

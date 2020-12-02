@@ -257,6 +257,17 @@ void PlayMode::update(float elapsed) {
 					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
 					local_id = c->recv_buffer[1];
 					std::cout << "local_id: " + std::to_string(local_id) << std::endl;
+					gameState = IN_GAME;
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
+				}
+				else if (type == 's') {
+					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
+					start_countdown = c->recv_buffer[1];
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
+				}
+				else if (type == 'q') {
+					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
+					lobby_size = c->recv_buffer[1];
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
 				else {
@@ -755,7 +766,7 @@ void PlayMode::draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm:
 
 void PlayMode::draw_text(std::vector< Vertex >& vertices) {
 	auto draw_string = [&](std::string str, glm::vec2 at, glm::u8vec4 color) {
-		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789. ";
+		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.%/ ";
 
 		for (size_t i = 0; i < str.size(); i++) {
 			for (size_t j = 0; j < alphabet.size(); j++) {
@@ -772,20 +783,36 @@ void PlayMode::draw_text(std::vector< Vertex >& vertices) {
 		}
 	};
 
-	if (GAME_OVER) {
-		std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
+	if (gameState == QUEUEING) {
+		std::string msg = "QUEUEING... ";
 		float width = msg.size() * 12.0f * 2.5f;
-		draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), hex_to_color_vec(player_colors[winner_id]));
-	} else {
-		size_t num_players = players.size();
-		size_t i = 0;
-		for (auto &[id, player] : players) {
-			std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
+		draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 12.0f * 2.5f + 1), glm::u8vec4(255, 255, 255, 255));
+
+		msg = std::to_string(lobby_size) + "/2";
+		width = msg.size() * 12.0f * 2.5f;
+		draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE - 0.5f * 12.0f * 2.5f), glm::u8vec4(255, 255, 255, 255));
+	}
+	else if (gameState == IN_GAME) {
+		if (start_countdown > 0) {
+			std::string msg = std::to_string(start_countdown / 10 + 1);
 			float width = msg.size() * 12.0f * 2.5f;
-			draw_string(msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1) - 0.5f * width, (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
-			i++;
+			draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), glm::u8vec4(255, 255, 255, 255));
 		}
-		
+		if (GAME_OVER) {
+			std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
+			float width = msg.size() * 12.0f * 2.5f;
+			draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), hex_to_color_vec(player_colors[winner_id]));
+		} else {
+			size_t num_players = players.size();
+			size_t i = 0;
+			for (auto &[id, player] : players) {
+				std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS)) + "%";
+				float width = msg.size() * 12.0f * 2.5f;
+				draw_string(msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1) - 0.5f * width, (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
+				i++;
+			}
+			
+		}
 	}
 }
 

@@ -14,6 +14,9 @@
 const uint8_t NUM_ROWS = 20;
 const uint8_t NUM_COLS = 40;
 const uint8_t MAX_NUM_PLAYERS = 4;
+const uint8_t START_GAME_PLAYERS = 2; // TODO support 4 player games
+const uint8_t START_HORIZONTAL_BORDER = (NUM_COLS - 20) / 2;
+const uint8_t START_VERTICAL_BORDER = (NUM_ROWS - 20) / 2;
 
 struct Uvec2 {
 	Uvec2(const uint32_t &_x, const uint32_t &_y): x(_x), y(_x) { }
@@ -27,24 +30,14 @@ struct Uvec2 {
 	inline bool operator != (const Uvec2 &a) { return !(*this == a); }
 };
 
-//server state:
-static std::deque<uint32_t> unused_player_ids;
-static std::vector<Uvec2> init_positions;
-
-uint8_t horizontal_border = (NUM_COLS - 20) / 2; // size of L/R walls
-uint8_t vertical_border = (NUM_ROWS - 20) / 2; // size of T/B walls
-const uint8_t BORDER_DECREMENT = 3;
-const uint32_t LEVEL_GROW_INTERVAL = 100; // in ticks
-
 //per-client state:
 struct PlayerInfo {
-	PlayerInfo() { 
-		id = unused_player_ids.front();
-		unused_player_ids.pop_front();
+	PlayerInfo(std::vector<Uvec2> &init_positions, uint8_t _id) { 
+		id = _id;
 		name = "Player " + std::to_string(id);
 		do {
-			x = (rand() % (NUM_COLS - horizontal_border * 2)) + horizontal_border;
-			y = (rand() % (NUM_ROWS - vertical_border * 2)) + vertical_border;
+			x = (rand() % (NUM_COLS - START_HORIZONTAL_BORDER * 2)) + START_HORIZONTAL_BORDER;
+			y = (rand() % (NUM_ROWS - START_VERTICAL_BORDER * 2)) + START_VERTICAL_BORDER;
 		} while (std::find(init_positions.begin(),
 							init_positions.end(),
 							Uvec2(x, y))
@@ -59,7 +52,21 @@ struct PlayerInfo {
 	uint8_t x, y;
 };
 
-static std::unordered_map< Connection *, PlayerInfo > players;
+struct Game {
+	bool game_over = false;
+	uint8_t start_countdown = 30; // 30 ticks = 3 seconds
+	uint32_t tick = 0;
+	std::unordered_map< Connection *, PlayerInfo > players;
+	std::vector<Uvec2> init_positions;
+	uint8_t horizontal_border = START_HORIZONTAL_BORDER; // size of L/R walls
+	uint8_t vertical_border = START_VERTICAL_BORDER; // size of T/B walls
+};
+
+static std::deque<Connection *> matchmaking_queue;
+static std::vector<Game> games;
+
+const uint8_t BORDER_DECREMENT = 3;
+const uint32_t LEVEL_GROW_INTERVAL = 100; // in ticks
 //static uint8_t winner_id;
 //static size_t winner_score = 0;
 //static bool GAME_OVER = false;
@@ -85,139 +92,175 @@ int main(int argc, char **argv) {
 	//------------ main loop ------------
 	constexpr float ServerTick = 1.0f / 10.0f; //TODO: set a server tick that makes sense for your game
 
-	for (int i = 0; i < MAX_NUM_PLAYERS; i++) {
-		unused_player_ids.emplace_back(i);
-	};
-
 	while (true) {
 		static auto next_tick = std::chrono::steady_clock::now() + std::chrono::duration< double >(ServerTick);
-		static uint32_t tick = 0;
 		//process incoming data from clients until a tick has elapsed:
 		while (true) {
 			auto now = std::chrono::steady_clock::now();
 			double remain = std::chrono::duration< double >(next_tick - now).count();
 			if (remain < 0.0) {
 				next_tick += std::chrono::duration< double >(ServerTick);
-				tick++;
 				break;
 			}
 			server.poll([&](Connection* c, Connection::Event evt) {
 				if (evt == Connection::OnOpen) {
 					std::cout << "connected" << '\n';
 					//client connected:
-					if (unused_player_ids.empty()) { // server is full
-						c->close();
+					matchmaking_queue.emplace_back(c);
+					for (Connection* c : matchmaking_queue) {
+						c->send('q');
+						c->send(uint8_t(matchmaking_queue.size()));
 					}
-					else {
-						// create some player info for them:
-						players.emplace(c, PlayerInfo());
-						// send player id
-						c->send('i');
-						c->send(players.at(c).id);
-						c->send('g');
-						c->send(uint8_t(horizontal_border));
-						c->send(uint8_t(vertical_border));
+					if (matchmaking_queue.size() >= START_GAME_PLAYERS) { // we have enough players to start a game
+						games.push_back(Game());
+						for (uint8_t i = 0; i < START_GAME_PLAYERS; i++) {
+							Connection* cc = matchmaking_queue.front();
+							matchmaking_queue.pop_front();
+							games.back().players.emplace(cc, PlayerInfo(games.back().init_positions, i));
+							cc->send('i');
+							cc->send(i);
+							cc->send('g');
+							cc->send(uint8_t(games.back().horizontal_border));
+							cc->send(uint8_t(games.back().vertical_border));
+						}
 					}
 				}
 				else if (evt == Connection::OnClose) {
 					//client disconnected:
+					//remove them from the matchmaking queue
+					auto f = std::find(matchmaking_queue.begin(), matchmaking_queue.end(), c);
+					if (f != matchmaking_queue.end())
+						matchmaking_queue.erase(f);
 
 					//remove them from the players list:
-					auto f = players.find(c);
-					assert(f != players.end());
-					unused_player_ids.emplace_back(f->second.id);
-					players.erase(f);
-
+					for (auto it = games.rbegin(); it != games.rend(); it++) {
+						auto &game = *it;
+						auto f = game.players.find(c);
+						if (f != game.players.end()) {
+							game.players.erase(f);
+							if (game.players.size() == 0) {
+								games.erase(std::next(it).base());
+								std::cout << "empty game, removing" << std::endl;
+							}
+						}
+					}
 				}
 				else {
 					assert(evt == Connection::OnRecv);
-					std::cout << "receiving" << '\n';
-					//got data from client:
-					std::cout << "got bytes:\n" << hex_dump(c->recv_buffer); std::cout.flush();
 
 					//look up in players list:
-					auto f = players.find(c);
-					assert(f != players.end());
-					PlayerInfo& player = f->second;
+					for (auto it = games.rbegin(); it != games.rend(); it++) {
+						auto &game = *it;
+						auto f = game.players.find(c);
+						if (f != game.players.end()) {
+							PlayerInfo& player = f->second;
 
-					//handle messages from client:
-					//TODO: update for the sorts of messages your clients send
-					while (c->recv_buffer.size() >= 2) {
-						//expecting two-byte messages 'b' (dir)
-						char type = c->recv_buffer[0];
-						if (type != 'b') {
-							std::cout << " message of non-'b' type received from client!" << std::endl;
-							//shut down client connection:
-							c->close();
-							return;
+							//handle messages from client:
+							while (c->recv_buffer.size() >= 2) {
+								//expecting two-byte messages 'b' (dir)
+								char type = c->recv_buffer[0];
+								
+								if (type == 'b') {
+									player.dir = c->recv_buffer[1];
+									c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
+								}
+								else if (type == 'd') {
+									game.players.erase(f);
+									if (game.players.size() == 0) {
+										games.erase(std::next(it).base());
+										std::cout << "empty game, removing" << std::endl;
+									}
+								}
+								else {
+									std::cout << "Unrecognized message received from client! recv_buffer = " << std::endl;
+									std::cout << hex_dump(c->recv_buffer) << std::endl;
+									//shut down client connection:
+									c->close();
+									return;
+								}
+							}
 						}
-						player.dir = c->recv_buffer[1];
-
-						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 					}
 				}
 				}, remain);
 		}
 
-		if (tick % LEVEL_GROW_INTERVAL == 0) {
-			horizontal_border = std::max(0, horizontal_border - BORDER_DECREMENT);
-			vertical_border = std::max(0, vertical_border - BORDER_DECREMENT);
+		for (auto& game : games) {
+			if (game.start_countdown > 0) {
+				game.start_countdown--;
+				for (auto& it : game.players) {
+					auto &c = it.first;
+					c->send('s');
+					c->send(uint8_t(game.start_countdown));
+				}
+			}
+			else {
+				game.tick++;
+				if (game.tick % LEVEL_GROW_INTERVAL == 0) {
+					game.horizontal_border = std::max(0, game.horizontal_border - BORDER_DECREMENT);
+					game.vertical_border = std::max(0, game.vertical_border - BORDER_DECREMENT);
 
-			for (auto& it : players) {
-        auto& c = it.first;
-				c->send('g');
-				c->send(uint8_t(horizontal_border));
-				c->send(uint8_t(vertical_border));
+					for (auto& it : game.players) {
+						auto& c = it.first;
+						c->send('g');
+						c->send(uint8_t(game.horizontal_border));
+						c->send(uint8_t(game.vertical_border));
+					}
+				}
 			}
 		}
 
-		//update current game state
-		//TODO: replace with *your* game state update
+		//update current game states
 		// update player position
-		for (auto& it : players) {
-      auto& player = it.second;
-			if (player.dir == 8) continue; // none
-			if (player.dir % 4 == 0 && player.x > horizontal_border) { // left
-				player.x--;
-			}
-			else if (player.dir % 4 == 1 && player.x < NUM_COLS - 1 - horizontal_border) { // right
-				player.x++;
-			}
-			else if (player.dir % 4 == 2 && player.y < NUM_ROWS - 1 - vertical_border) { // up
-				player.y++;
-			}
-			else if (player.dir % 4 == 3 && player.y > vertical_border) { // down
-				player.y--;
-			}
-			if (3 < player.dir) { // ll/rr/uu/dd
-				if (player.dir % 4 == 0 && player.x > horizontal_border) { // left
-					player.x--;
-				}
-				else if (player.dir % 4 == 1 && player.x < NUM_COLS - 1 - horizontal_border) { // right
-					player.x++;
-				}
-				else if (player.dir % 4 == 2 && player.y < NUM_ROWS - 1 - vertical_border) { // up
-					player.y++;
-				}
-				else if (player.dir % 4 == 3 && player.y > vertical_border) { // down
-					player.y--;
+		for (auto& game : games) {
+			if (game.start_countdown == 0) {
+				for (auto& it : game.players) {
+					auto& player = it.second;
+					if (player.dir == 8) continue; // none
+					if (player.dir % 4 == 0 && player.x > game.horizontal_border) { // left
+						player.x--;
+					}
+					else if (player.dir % 4 == 1 && player.x < NUM_COLS - 1 - game.horizontal_border) { // right
+						player.x++;
+					}
+					else if (player.dir % 4 == 2 && player.y < NUM_ROWS - 1 - game.vertical_border) { // up
+						player.y++;
+					}
+					else if (player.dir % 4 == 3 && player.y > game.vertical_border) { // down
+						player.y--;
+					}
+					if (3 < player.dir) { // ll/rr/uu/dd
+						if (player.dir % 4 == 0 && player.x > game.horizontal_border) { // left
+							player.x--;
+						}
+						else if (player.dir % 4 == 1 && player.x < NUM_COLS - 1 - game.horizontal_border) { // right
+							player.x++;
+						}
+						else if (player.dir % 4 == 2 && player.y < NUM_ROWS - 1 - game.vertical_border) { // up
+							player.y++;
+						}
+						else if (player.dir % 4 == 3 && player.y > game.vertical_border) { // down
+							player.y--;
+						}
+					}
 				}
 			}
 		}
 
-		//send updated game state to all clients
-		//TODO: update for your game state
-		for (auto& it : players) {
-      auto& c = it.first;
-			c->send('a');
-			c->send(uint8_t(players.size()));
-			// send along all player info
-			for (auto& it_prime : players) {
-        auto& player_prime = it_prime.second;
-				c->send(uint8_t(player_prime.id));
-				c->send(uint8_t(player_prime.dir));
-				c->send(uint8_t(player_prime.x));
-				c->send(uint8_t(player_prime.y));
+		//send updated game state to all clients in all games
+		for (auto& game : games) {
+			for (auto& it : game.players) {
+				auto& c = it.first;
+				c->send('a');
+				c->send(uint8_t(game.players.size()));
+				// send along all player info
+				for (auto& it_prime : game.players) {
+					auto& player_prime = it_prime.second;
+					c->send(uint8_t(player_prime.id));
+					c->send(uint8_t(player_prime.dir));
+					c->send(uint8_t(player_prime.x));
+					c->send(uint8_t(player_prime.y));
+				}
 			}
 		}
 	}

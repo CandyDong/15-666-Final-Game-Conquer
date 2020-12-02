@@ -50,6 +50,10 @@ struct PlayMode : Mode
 	//----- game state -----
 	float total_elapsed = 0.0f;
 
+	enum GameState { QUEUEING, IN_GAME };
+	GameState gameState = QUEUEING;
+	uint8_t lobby_size = 0;
+
 	bool GAME_OVER = false;
 	uint8_t winner_id;
 	size_t winner_score = 0;
@@ -75,6 +79,7 @@ struct PlayMode : Mode
 	std::vector<std::vector<Tile>> tiles; // logical representation of game state
 	std::vector<std::vector<uint32_t>> visual_board; // visual representation of game state
 	uint8_t horizontal_border, vertical_border; // "walls"
+	uint8_t start_countdown = 0;
 
 	// ll, rr, uu, dd are for player with speed powerup
 	enum Dir { left, right, up, down, ll, rr, uu, dd, none };

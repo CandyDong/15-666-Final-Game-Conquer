@@ -17,6 +17,7 @@ const uint8_t NUM_COLS = 40;
 const uint8_t START_GAME_PLAYERS = 2; // TODO support 4 player games
 const uint8_t START_HORIZONTAL_BORDER = (NUM_COLS - 20) / 2;
 const uint8_t START_VERTICAL_BORDER = (NUM_ROWS - 20) / 2;
+const uint8_t POWERUP_INTERVAL = 100; // 100 ticks = 10 seconds
 
 struct Uvec2 {
 	Uvec2(const uint32_t &_x, const uint32_t &_y): x(_x), y(_x) { }
@@ -56,6 +57,9 @@ struct Game {
 	bool game_over = false;
 	uint8_t start_countdown = 30; // 30 ticks = 3 seconds
 	uint32_t tick = 0;
+	bool powerup_placed = false;
+	uint32_t powerup_timer = POWERUP_INTERVAL;
+	uint8_t powerup_x, powerup_y;
 	std::unordered_map< Connection *, PlayerInfo > players;
 	std::vector<Uvec2> init_positions;
 	uint8_t horizontal_border = START_HORIZONTAL_BORDER; // size of L/R walls
@@ -129,8 +133,13 @@ int main(int argc, char **argv) {
 					//client disconnected:
 					//remove them from the matchmaking queue
 					auto f = std::find(matchmaking_queue.begin(), matchmaking_queue.end(), c);
-					if (f != matchmaking_queue.end())
+					if (f != matchmaking_queue.end()) {
 						matchmaking_queue.erase(f);
+						for (Connection* c : matchmaking_queue) {
+							c->send('q');
+							c->send(uint8_t(matchmaking_queue.size()));
+						}
+					}
 
 					//remove them from the players list:
 					for (auto it = games.rbegin(); it != games.rend(); it++) {
@@ -156,11 +165,11 @@ int main(int argc, char **argv) {
 							PlayerInfo& player = f->second;
 
 							//handle messages from client:
-							while (c->recv_buffer.size() >= 2) {
-								//expecting two-byte messages 'b' (dir)
+							while (c->recv_buffer.size() >= 1) {
 								char type = c->recv_buffer[0];
 								
 								if (type == 'b') {
+									if (c->recv_buffer.size() < 2) break;
 									player.dir = c->recv_buffer[1];
 									c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 								}
@@ -170,6 +179,23 @@ int main(int argc, char **argv) {
 										games.erase(std::next(it).base());
 										std::cout << "empty game, removing" << std::endl;
 									}
+									c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 1);
+								}
+								else if (type == 'l') {
+									if (c->recv_buffer.size() < 3) break;
+									game.powerup_timer = POWERUP_INTERVAL;
+									game.powerup_placed = true;
+									game.powerup_x = c->recv_buffer[1];
+									game.powerup_y = c->recv_buffer[2];
+									uint8_t powerup_type = rand() % 2;
+									for (auto& it : game.players) {
+										auto& c = it.first;
+										c->send('p');
+										c->send(powerup_type);
+										c->send(game.powerup_x);
+										c->send(game.powerup_y);
+									}
+									c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 3);
 								}
 								else {
 									std::cout << "Unrecognized message received from client! recv_buffer = " << std::endl;
@@ -207,6 +233,11 @@ int main(int argc, char **argv) {
 						c->send(uint8_t(game.vertical_border));
 					}
 				}
+				game.powerup_timer--;
+				if (game.powerup_timer == 0) {
+					// ask a player to generate a powerup location
+					game.players.begin()->first->send('l');
+				}
 			}
 		}
 
@@ -242,6 +273,11 @@ int main(int argc, char **argv) {
 						else if (player.dir % 4 == 3 && player.y > game.vertical_border) { // down
 							player.y--;
 						}
+					}
+
+					if (player.x == game.powerup_x && player.y == game.powerup_y) {
+						game.powerup_timer = POWERUP_INTERVAL;
+						game.powerup_placed = false;
 					}
 				}
 			}

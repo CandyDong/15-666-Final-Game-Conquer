@@ -263,15 +263,32 @@ void PlayMode::update(float elapsed) {
 					gameState = IN_GAME;
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
-				else if (type == 's') {
+				else if (type == 's') { // start countdown update
 					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
 					start_countdown = c->recv_buffer[1];
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
-				else if (type == 'q') {
+				else if (type == 'q') { // queue update
 					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
 					lobby_size = c->recv_buffer[1];
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
+				}
+				else if (type == 'l') { // server request powerup location
+					c->send('l');
+					glm::uvec2 loc = get_new_powerup_location();
+					c->send((uint8_t) loc.x);
+					c->send((uint8_t) loc.y);
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 1);
+				}
+				else if (type == 'p') {
+					if (c->recv_buffer.size() < 4) break;
+
+					PowerupType type = (PowerupType) c->recv_buffer[1];
+					uint8_t x = c->recv_buffer[2];
+					uint8_t y = c->recv_buffer[3];
+					new_powerup(type, glm::uvec2(x, y));
+
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 4);
 				}
 				else {
 					throw std::runtime_error("Server sent unknown message type '" + std::to_string(type) + "'");
@@ -279,15 +296,6 @@ void PlayMode::update(float elapsed) {
 			}
 		}
 	}, 0.0);
-
-	// update powerup
-	if (powerup_cd > 0.0f) {
-		powerup_cd -= elapsed;
-	}
-	else {
-		new_powerup();
-		powerup_cd = 10.0f;
-	}
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -507,7 +515,6 @@ void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) 
 		p->powerup_type = tiles[x][y].powerup.type;
 		// std::cout << tiles[x][y].powerup;
 		tiles[x][y].powerup.type = no_powerup;
-		powerup_cd = 10.0f;
 	}
 
 	// player enters their own territory
@@ -835,7 +842,8 @@ void PlayMode::draw_text(std::vector< Vertex >& vertices, std::string msg, glm::
 // clear powerup in tiles
 // clear player's powerup
 // create new random powerup in tiles
-void PlayMode::new_powerup() {
+
+glm::uvec2 PlayMode::get_new_powerup_location() {
 	std::vector<glm::uvec2> empty_pos;
 	for (int x = horizontal_border; x < NUM_COLS - 1 - horizontal_border; x++) {
 		for (int y = vertical_border; y < NUM_ROWS - 1 - vertical_border; y++) {
@@ -845,21 +853,23 @@ void PlayMode::new_powerup() {
 			}
 		}
 	}
+	return empty_pos[rand() % empty_pos.size()];
+}
 
+void PlayMode::new_powerup(PowerupType type, glm::uvec2 location) {
 	for (auto& [id, player] : players) {
 		(void) id;
 		player.powerup_type = no_powerup;
 	}
 
-	int rnd_idx = rand() % empty_pos.size();
-	tiles[empty_pos[rnd_idx].x][empty_pos[rnd_idx].y].powerup.type = (PowerupType)(rand() % n_powerups);
-	tiles[empty_pos[rnd_idx].x][empty_pos[rnd_idx].y].powerup.frame = 0.0f;
+	tiles[location.x][location.y].powerup.type = type;
+	tiles[location.x][location.y].powerup.frame = 0.0f;
 }
 
 void PlayMode::update_powerup(float elapsed) {
 	for (int x = horizontal_border; x < NUM_COLS - 1 - horizontal_border; x++) {
 		for (int y = vertical_border; y < NUM_ROWS - 1 - vertical_border; y++) {
-			if (tiles[x][y].powerup.type == no_powerup) { continue; }
+			if (tiles[x][y].powerup.type == no_powerup) continue;
 			float num_frames = tiles[x][y].powerup.type == speed ? 4.0f : 5.0f; 
 			float next_frame = tiles[x][y].powerup.frame + num_frames * elapsed / 0.5f;
 			while (next_frame > num_frames) { next_frame -= num_frames;}

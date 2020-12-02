@@ -65,9 +65,6 @@ struct PlayMode : Mode
 	uint8_t winner_id;
 	size_t winner_score = 0;
 
-	int n_powerups = 2;
-	float powerup_cd = 10.0f;
-	bool start_cd = true;
 	struct Powerup {
 		Powerup(PowerupType _type) : type(_type) { }
 		PowerupType type;
@@ -146,7 +143,8 @@ struct PlayMode : Mode
 	void draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm::vec2 size, glm::vec2 tilepos, glm::vec2 tilesize, glm::u8vec4 color);
 	void draw_text(std::vector< Vertex >& vertices, std::string msg, glm::vec2 anchor, glm::u8vec4 color);
 
-	void new_powerup();
+	glm::uvec2 get_new_powerup_location();
+	void new_powerup(PowerupType type, glm::uvec2 location);
 	void update_powerup(float elapsed);
 
 	void win_game(uint8_t id, uint32_t area);

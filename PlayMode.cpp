@@ -323,16 +323,26 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	// draw the borders for debugging purposes
 	// draw_borders(hex_to_color_vec(border_color), vertices);
 
-	if (GAME_OVER) {
-		std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
-		draw_text(vertices, msg, glm::vec2(GRID_W/0.5f, GRID_H/0.5f), hex_to_color_vec(player_colors[winner_id]));
-	} 
-	size_t num_players = players.size();
-	size_t i = 0;
-	for (auto &[id, player] : players) {
-		std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
-		draw_text(vertices, msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
-		i++;
+	if (gameState == QUEUEING) {
+		draw_text(vertices, "QUEUEING...", glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE + 20.0f), glm::u8vec4(255, 255, 255, 255));
+		draw_text(vertices, std::to_string(lobby_size) + "/2", glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE - 20.0f), glm::u8vec4(255, 255, 255, 255));
+	}
+	else if (gameState == IN_GAME) {
+		if (GAME_OVER) {
+			std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
+			draw_text(vertices, msg, glm::vec2(GRID_W * 0.5f, GRID_H * 0.5f), hex_to_color_vec(player_colors[winner_id]));
+		} 
+		size_t num_players = players.size();
+		size_t i = 0;
+		for (auto &[id, player] : players) {
+			std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
+			draw_text(vertices, msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
+			i++;
+		}
+		if (start_countdown > 0) {
+			std::string msg = std::to_string(start_countdown / 10 + 1);
+			draw_text(vertices, msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE), glm::u8vec4(255, 255, 255, 255));
+		}
 	}
 
 	//---- actual drawing ----
@@ -818,37 +828,8 @@ void PlayMode::draw_text(std::vector< Vertex >& vertices, std::string msg, glm::
 		}
 	};
 
-	if (gameState == QUEUEING) {
-		std::string msg = "QUEUEING... ";
-		float width = msg.size() * 12.0f * 2.5f;
-		draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 12.0f * 2.5f + 1), glm::u8vec4(255, 255, 255, 255));
-
-		msg = std::to_string(lobby_size) + "/2";
-		width = msg.size() * 12.0f * 2.5f;
-		draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE - 0.5f * 12.0f * 2.5f), glm::u8vec4(255, 255, 255, 255));
-	}
-	else if (gameState == IN_GAME) {
-		if (start_countdown > 0) {
-			std::string msg = std::to_string(start_countdown / 10 + 1);
-			float width = msg.size() * 12.0f * 2.5f;
-			draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), glm::u8vec4(255, 255, 255, 255));
-		}
-		if (GAME_OVER) {
-			std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
-			float width = msg.size() * 12.0f * 2.5f;
-			draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), hex_to_color_vec(player_colors[winner_id]));
-		} else {
-			size_t num_players = players.size();
-			size_t i = 0;
-			for (auto &[id, player] : players) {
-				std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS)) + "%";
-				float width = msg.size() * 12.0f * 2.5f;
-				draw_string(msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1) - 0.5f * width, (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
-				i++;
-			}
-			
-		}
-	}
+	float width = msg.size() * 12.0f * 2.5f;
+	draw_string(msg, glm::vec2(anchor.x - 0.5f * width, anchor.y + 0.5f * 13.0f), color);
 }
 
 // clear powerup in tiles

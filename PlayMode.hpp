@@ -84,6 +84,7 @@ struct PlayMode : Mode
 		Player(uint8_t _id, uint32_t _color, glm::uvec2 _pos) : id(_id), color(_color), pos(_pos) {}
 		uint8_t id;
 		uint32_t color;
+		uint32_t area = 0;
 		glm::uvec2 pos;
 		glm::uvec2 prev_pos[2]; // previous 2 positions (for calculating loops)
 		PowerupType powerup_type = no_powerup;
@@ -135,7 +136,7 @@ struct PlayMode : Mode
 	void draw_tiles(std::vector<Vertex> &vertices);
 	void draw_players(std::vector<Vertex> &vertices);
 	void draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm::vec2 size, glm::vec2 tilepos, glm::vec2 tilesize, glm::u8vec4 color);
-	void draw_text(std::vector< Vertex >& vertices, std::string msg);
+	void draw_text(std::vector< Vertex >& vertices);
 
 	void new_powerup();
 	void update_powerup(float elapsed);
@@ -144,4 +145,5 @@ struct PlayMode : Mode
 	std::vector<glm::uvec2> shortest_path(glm::uvec2 const &start, glm::uvec2 const &end, std::vector<glm::uvec2> const &allowed_tiles);
 	void floodfill(std::vector<std::vector<uint32_t>> &grid, uint32_t x, uint32_t y, uint32_t new_color, uint32_t old_color);
 	void fill_interior(uint32_t color, uint32_t &delta_size, uint32_t &total_size);
+	void update_areas();
 };

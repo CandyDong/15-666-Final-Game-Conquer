@@ -215,7 +215,7 @@ void PlayMode::update(float elapsed) {
 				if (type == 'a') {
 					uint32_t num_players = uint8_t(c->recv_buffer[1]);
 					//std::cout << "num_players=" << num_players << std::endl;
-					if (c->recv_buffer.size() < 2 + num_players * 3) break; //if whole message isn't here, can't process
+					if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
 					//whole message *is* here, so set current server message:
 
 					uint8_t byte_index = 2;
@@ -309,10 +309,8 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
 	);
 
-	if (GAME_OVER) {
-		std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
-		draw_text(vertices, msg);
-	}
+	
+	draw_text(vertices);
 	//NOTE: glm matrices are specified in *Column-Major* order,
 	// so each line above is specifying a *column* of the matrix(!)
 
@@ -465,6 +463,8 @@ void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) 
 			Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
 		}
 
+		update_areas();
+
 		// check if player has won
 		if (territory_size > WIN_THRESHOLD) {
 			win_game(id, territory_size);
@@ -511,6 +511,8 @@ void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) 
 			if (moving && (trail_size + delta_size) > 0) { 
 				Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
 			}
+
+			update_areas();
 
 			// check if player has won
 			if (territory_size > WIN_THRESHOLD) {
@@ -751,7 +753,7 @@ void PlayMode::draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm:
 	vertices.emplace_back(glm::vec3(pos.x, pos.y + size.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y + tilesize.y));
 }
 
-void PlayMode::draw_text(std::vector< Vertex >& vertices, std::string msg) {
+void PlayMode::draw_text(std::vector< Vertex >& vertices) {
 	auto draw_string = [&](std::string str, glm::vec2 at, glm::u8vec4 color) {
 		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789. ";
 
@@ -770,8 +772,22 @@ void PlayMode::draw_text(std::vector< Vertex >& vertices, std::string msg) {
 		}
 	};
 
-	float width = msg.size() * 12.0f * 2.5f;
-	draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), hex_to_color_vec(0xff0000ff));
+	if (GAME_OVER) {
+		std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
+		float width = msg.size() * 12.0f * 2.5f;
+		draw_string(msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE - 0.5f * width, 0.5 * NUM_ROWS * TILE_SIZE + 0.5f * 13.0f), hex_to_color_vec(player_colors[winner_id]));
+	} else {
+		
+		size_t num_players = players.size();
+		size_t i = 0;
+		for (auto &[id, player] : players) {
+			std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
+			float width = msg.size() * 12.0f * 2.5f;
+			draw_string(msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
+			i++;
+		}
+		
+	}
 }
 
 // clear powerup in tiles
@@ -953,4 +969,22 @@ void PlayMode::fill_interior(uint32_t color, uint32_t &delta_size, uint32_t &ter
 		}
 	}
 	return;
+}
+
+void PlayMode::update_areas() {
+	for (auto &[id, player] : players) {
+		(void) id;
+		player.area = 0;
+	}
+	for (int x = 0; x < NUM_COLS; x++) {
+		for (int y = 0; y < NUM_ROWS; y++) {
+			if (tiles[x][y].color != white_color) {
+				for (uint32_t i = 0; i < player_colors.size(); i++) {
+					if (tiles[x][y].color == player_colors[i]) {
+						players.at(i).area++;
+					}
+				}
+			}
+		}
+	}
 }

@@ -105,6 +105,7 @@ CLIENT_NAMES =
 	PlayMode
 	#LitColorTextureProgram
 	ColorTextureProgram #not used right now, but you might want it
+	DrawBackground
 	Sound
 	load_wav
 	load_opus
@@ -119,7 +120,9 @@ COMMON_NAMES =
 	PathFont
 	PathFont-font
 	DrawLines
+	DrawBloom
 	ColorProgram
+	BloomProgram
 	Scene
 	Mesh
 	load_save_png

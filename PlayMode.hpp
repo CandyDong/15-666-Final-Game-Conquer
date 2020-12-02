@@ -38,12 +38,19 @@ struct PlayMode : Mode
 	const float PADDING = 50.0f;
 	const glm::uvec2 WINDOW_SIZE = glm::uvec2(1280, 720);
 
-	const uint32_t bg_color = 0x404040ff;
+	enum PowerupType { speed, trail, no_powerup };
+	// ll, rr, uu, dd are for player with speed powerup
+	enum Dir { left, right, up, down, ll, rr, uu, dd, none };
+
 	const uint32_t white_color = 0xffffffff;
 	const uint32_t black_color = 0x000000ff;
 	// const uint32_t base_color = 0x381d35ff; // initial color of tiles
-	const uint32_t base_color = white_color;
+	const uint32_t base_color = 0x0a1c29ff;
+	// const uint32_t bg_color = 0x404040ff;
+	const uint32_t bg_color = black_color;
 	const uint32_t border_color = 0xd5cdd8ff;
+	const std::unordered_map<PowerupType, uint32_t> powerup_colors{{speed, 0xcb5ab2ff},
+																	{trail, 0x88c7ffff}};
 	const std::vector<uint32_t> player_colors{0x390099ff, 0xffbd00ff, 0xff5400ff, 0x9e0059ff};
 	const std::vector<uint32_t> trail_colors{0x8762c5ff,  0xffdf83ff, 0xffa980ff, 0xca679fff};
 
@@ -58,7 +65,6 @@ struct PlayMode : Mode
 	uint8_t winner_id;
 	size_t winner_score = 0;
 
-	enum PowerupType { speed, trail, no_powerup };
 	int n_powerups = 2;
 	float powerup_cd = 10.0f;
 	bool start_cd = true;
@@ -80,9 +86,6 @@ struct PlayMode : Mode
 	std::vector<std::vector<uint32_t>> visual_board; // visual representation of game state
 	uint8_t horizontal_border, vertical_border; // "walls"
 	uint8_t start_countdown = 0;
-
-	// ll, rr, uu, dd are for player with speed powerup
-	enum Dir { left, right, up, down, ll, rr, uu, dd, none };
 
 	struct Player
 	{
@@ -141,7 +144,7 @@ struct PlayMode : Mode
 	void draw_tiles(std::vector<Vertex> &vertices);
 	void draw_players(std::vector<Vertex> &vertices);
 	void draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm::vec2 size, glm::vec2 tilepos, glm::vec2 tilesize, glm::u8vec4 color);
-	void draw_text(std::vector< Vertex >& vertices);
+	void draw_text(std::vector< Vertex >& vertices, std::string msg, glm::vec2 anchor, glm::u8vec4 color);
 
 	void new_powerup();
 	void update_powerup(float elapsed);

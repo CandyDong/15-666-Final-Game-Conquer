@@ -1,6 +1,9 @@
 #include "PlayMode.hpp"
 
+#include "DrawBloom.hpp"
 #include "DrawLines.hpp"
+#include "DrawBackground.hpp"
+
 #include "gl_errors.hpp"
 #include "data_path.hpp"
 #include "hex_dump.hpp"
@@ -291,11 +294,6 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	//vertices will be accumulated into this list and then uploaded+drawn at the end of this function:
 	std::vector< Vertex > vertices;
 
-	draw_tiles(vertices);
-	draw_players(vertices);
-	// draw the borders for debugging purposes
-	// draw_borders(hex_to_color_vec(border_color), vertices);
-
 	//compute area that should be visible:
 	glm::vec2 scene_min = glm::vec2(-PADDING, -PADDING);
 	glm::vec2 scene_max = glm::vec2(GRID_W+PADDING, GRID_H+PADDING);
@@ -320,10 +318,22 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
 	);
 
-	
-	draw_text(vertices);
-	//NOTE: glm matrices are specified in *Column-Major* order,
-	// so each line above is specifying a *column* of the matrix(!)
+	draw_tiles(vertices);
+	draw_players(vertices);
+	// draw the borders for debugging purposes
+	// draw_borders(hex_to_color_vec(border_color), vertices);
+
+	if (GAME_OVER) {
+		std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
+		draw_text(vertices, msg, glm::vec2(GRID_W/0.5f, GRID_H/0.5f), hex_to_color_vec(player_colors[winner_id]));
+	} 
+	size_t num_players = players.size();
+	size_t i = 0;
+	for (auto &[id, player] : players) {
+		std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
+		draw_text(vertices, msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
+		i++;
+	}
 
 	//---- actual drawing ----
 	//clear the color buffer:
@@ -368,6 +378,41 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 
 	//reset current program to none:
 	glUseProgram(0);
+
+	// draw the background
+	// { 	
+	// 	DrawBackground background(court_to_clip);
+	// 	background.draw(
+	// 		glm::vec2(GRID_W, GRID_H),
+	// 		hex_to_color_vec(white_color));
+		
+	// }
+
+	// draw the bloom light
+	{ 	
+		for (auto& [id, player] : players) {
+			uint32_t trail_color = trail_colors[id];
+			DrawBloom bloom(court_to_clip);
+			bloom.draw(
+				(glm::vec2(player.pos) + glm::vec2(0.5f, 0.5f))*TILE_SIZE,
+				600.0f,
+				hex_to_color_vec(trail_color & 0xffffff8f));
+		}
+
+		for (int x = 0; x < NUM_COLS; x++) {
+			for (int y = 0; y < NUM_ROWS; y++) {
+				if (tiles[x][y].powerup.type != no_powerup) {
+					uint32_t powerup_color = powerup_colors.at(tiles[x][y].powerup.type);
+					DrawBloom bloom(court_to_clip);
+					bloom.draw(
+						(glm::vec2(x, y) + glm::vec2(0.5f, 0.5f))*TILE_SIZE,
+						100.0f,
+						hex_to_color_vec(powerup_color & 0xffffff8f));
+				}
+			}
+		}
+	}
+
 
 	GL_ERRORS(); //PARANOIA: print errors just in case we did something wrong.
 
@@ -641,13 +686,8 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 
 	for (int x = 0; x < NUM_COLS; x++) {
 		for (int y = 0; y < NUM_ROWS; y++) {
-			bool is_trail_color = false;
-			for (uint32_t const &col : trail_colors) {
-				if (tiles[x][y].color == col) {
-					is_trail_color = true;
-					break;
-				}
-			}
+			std::vector<uint32_t>::const_iterator trail_it = std::find(trail_colors.begin(), trail_colors.end(), tiles[x][y].color);
+			bool is_trail_color = (trail_it != trail_colors.end());
 
 			if (tiles[x][y].color == base_color || is_trail_color) {
 				visual_board[x][y] = tiles[x][y].color;
@@ -657,23 +697,18 @@ void PlayMode::draw_tiles(std::vector<Vertex> &vertices) {
 			}
 			glm::u8vec4 color = hex_to_color_vec(visual_board[x][y]);
 
-			// draw_texture(vertices, glm::vec2(x * TILE_SIZE, y * TILE_SIZE), 
-			// 		glm::vec2(TILE_SIZE, TILE_SIZE),
-			// 		glm::vec2(0.0f, 9.0f),
-			// 		glm::vec2(1.0f, 1.0f),
-			// 		glm::u8vec4(255, 255, 255, 255));
+			if (is_trail_color) {
+				// do not draw the first trail tile which overlaps with the player
+				uint8_t player_id = trail_it - trail_colors.begin();
+				Player player = players.at(player_id);
+				if (glm::uvec2(x, y) == player.pos) {
+					color = hex_to_color_vec(base_color);
+				}
+			} 
 			draw_rectangle(glm::vec2(x * TILE_SIZE, y * TILE_SIZE),
-						glm::vec2(TILE_SIZE, TILE_SIZE),
-						color,
-						vertices);
-
-			// if (is_trail_color) {
-			// 	draw_texture(vertices, glm::vec2(x * TILE_SIZE, y * TILE_SIZE), 
-			// 		glm::vec2(TILE_SIZE, TILE_SIZE),
-			// 		glm::vec2(0.0f, 13.0f),
-			// 		glm::vec2(1.0f, 1.0f),
-			// 		glm::u8vec4(255, 255, 255, 255));
-			// }	
+					glm::vec2(TILE_SIZE, TILE_SIZE),
+					color,
+					vertices);
 			
 			// draw powerup
 			if (tiles[x][y].powerup.type != no_powerup) {
@@ -764,7 +799,7 @@ void PlayMode::draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm:
 	vertices.emplace_back(glm::vec3(pos.x, pos.y + size.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y + tilesize.y));
 }
 
-void PlayMode::draw_text(std::vector< Vertex >& vertices) {
+void PlayMode::draw_text(std::vector< Vertex >& vertices, std::string msg, glm::vec2 anchor, glm::u8vec4 color) {
 	auto draw_string = [&](std::string str, glm::vec2 at, glm::u8vec4 color) {
 		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.%/ ";
 

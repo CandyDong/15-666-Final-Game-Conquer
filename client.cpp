@@ -20,14 +20,16 @@ int main(int argc, char **argv) {
 	//when compiled on windows, unhandled exceptions don't have their message printed, which can make debugging simple issues difficult.
 	try {
 #endif
+	std::string host = "128.2.13.145";
+	std::string port = "12345";
 	//------------ command line arguments ------------
-	if (argc != 3) {
-		std::cerr << "Usage:\n\t./client <host> <port>" << std::endl;
-		return 1;
+	if (argc == 3) {
+		host = argv[1];
+		port = argv[2];
 	}
 
 	//------------ connect to server --------------
-	Client client(argv[1], argv[2]);
+	Client client(host, port);
 
 	//------------  initialization ------------
 

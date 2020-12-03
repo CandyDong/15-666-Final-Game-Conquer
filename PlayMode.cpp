@@ -129,11 +129,29 @@ PlayMode::PlayMode(Client &client_) : client(client_) {
 		glm::uvec2 size(0, 0);
 		load_png(data_path("sprite.png"), &size, &data, LowerLeftOrigin);
 		sprite_sheet_size = size;
-		std::cout << "sprite sheet size: " << glm::to_string(sprite_sheet_size) << std::endl;
 
 		glGenTextures(1, &sprite_tex);
 
 		glBindTexture(GL_TEXTURE_2D, sprite_tex);
+
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+		glBindTexture(GL_TEXTURE_2D, 0);
+
+		GL_ERRORS();
+	}
+	{ // load splash screen texture
+		std::vector< glm::u8vec4 > data;
+		glm::uvec2 size(0, 0);
+		load_png(data_path("conquer_splash.png"), &size, &data, LowerLeftOrigin);
+		splash_screen_size = size;
+
+		glGenTextures(1, &splash_tex);
+
+		glBindTexture(GL_TEXTURE_2D, splash_tex);
 
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.x, size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
 
@@ -166,36 +184,53 @@ PlayMode::~PlayMode() {
 }
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
+	if (evt.type == SDL_KEYDOWN) {
+		if (evt.key.keysym.sym == SDLK_SPACE) {
+			if (gameState == IN_GAME && GAME_OVER) {
+				client.connections.back().send('d');
+				reset_state();
+				gameState = QUEUEING;
+				return true;
+			}
+			if (gameState == MAIN_MENU) {
+				client.connections.back().send('q');
+				gameState = QUEUEING;
+				return true;
+			}
+		}
+	}
 	return false;
 }
 
 void PlayMode::update(float elapsed) {
-	if (GAME_OVER) {
-		return;
+	if (gameState == IN_GAME) {
+		if (GAME_OVER) {
+			return;
+		}
+
+		update_powerup(elapsed);
+
+		//queue data for sending to server:
+		const uint8_t *key = SDL_GetKeyboardState(NULL);
+		Dir dir = none;
+		if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_A]) {
+			if (players.at(local_id).powerup_type == speed) dir = ll;
+			else dir = left;
+		} else if (key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_D]) {
+			if (players.at(local_id).powerup_type == speed) dir = rr;
+			else dir = right;
+		} else if (key[SDL_SCANCODE_UP] || key[SDL_SCANCODE_W]) {
+			if (players.at(local_id).powerup_type == speed) dir = uu;
+			else dir = up;
+		} else if (key[SDL_SCANCODE_DOWN] || key[SDL_SCANCODE_S]) {
+			if (players.at(local_id).powerup_type == speed) dir = dd;
+			else dir = down;
+		}
+
+		//send a two-byte message of type 'b':
+		client.connections.back().send('b');
+		client.connections.back().send((uint8_t)dir);
 	}
-
-	update_powerup(elapsed);
-
-	//queue data for sending to server:
-	const uint8_t *key = SDL_GetKeyboardState(NULL);
-	Dir dir = none;
-	if (key[SDL_SCANCODE_LEFT] || key[SDL_SCANCODE_A]) {
-		if (players.at(local_id).powerup_type == speed) dir = ll;
-		else dir = left;
-	} else if (key[SDL_SCANCODE_RIGHT] || key[SDL_SCANCODE_D]) {
-		if (players.at(local_id).powerup_type == speed) dir = rr;
-		else dir = right;
-	} else if (key[SDL_SCANCODE_UP] || key[SDL_SCANCODE_W]) {
-		if (players.at(local_id).powerup_type == speed) dir = uu;
-		else dir = up;
-	} else if (key[SDL_SCANCODE_DOWN] || key[SDL_SCANCODE_S]) {
-		if (players.at(local_id).powerup_type == speed) dir = dd;
-		else dir = down;
-	}
-
-	//send a two-byte message of type 'b':
-	client.connections.back().send('b');
-	client.connections.back().send((uint8_t)dir);
 
 	//send/receive data:
 	client.poll([this, elapsed](Connection* c, Connection::Event event) {
@@ -221,32 +256,34 @@ void PlayMode::update(float elapsed) {
 					if (c->recv_buffer.size() < 2 + num_players * 4) break; //if whole message isn't here, can't process
 					//whole message *is* here, so set current server message:
 
-					uint8_t byte_index = 2;
-					for (uint32_t k = 0; k < num_players; k++) {
-						uint8_t id = c->recv_buffer[byte_index++];
-						uint8_t dir = c->recv_buffer[byte_index++];
-						uint8_t x = c->recv_buffer[byte_index++];
-						uint8_t y = c->recv_buffer[byte_index++];
-						glm::vec2 pos = glm::vec2(x, y);
+					if (gameState == IN_GAME) {
+						uint8_t byte_index = 2;
+						for (uint32_t k = 0; k < num_players; k++) {
+							uint8_t id = c->recv_buffer[byte_index++];
+							uint8_t dir = c->recv_buffer[byte_index++];
+							uint8_t x = c->recv_buffer[byte_index++];
+							uint8_t y = c->recv_buffer[byte_index++];
+							glm::vec2 pos = glm::vec2(x, y);
 
-						auto player = players.find(id);
-						if (player == players.end()) {
-							Sound::play(*connect_sample, 1.0f, 0.0f);
-							create_player(id, (PlayMode::Dir)dir, pos);
-						}
-						else {
-							Player* p = &player->second;
-							// std::cout << p->pos.x << ' ' << p->pos.y << ' ' << pos.x << ' ' << pos.y << '\n';
-							if (std::abs((int)p->pos.x - (int)pos.x) > 1 ||
-								std::abs((int)p->pos.y - (int)pos.y) > 1) { // moved 2 tiles
-								update_player(p, (PlayMode::Dir)dir, glm::vec2((p->pos.x + pos.x) / 2,
-									                       (p->pos.y + pos.y) / 2), elapsed);
+							auto player = players.find(id);
+							if (player == players.end()) {
+								Sound::play(*connect_sample, 1.0f, 0.0f);
+								create_player(id, (PlayMode::Dir)dir, pos);
 							}
-							update_player(p, (PlayMode::Dir)dir, pos, elapsed);
+							else {
+								Player* p = &player->second;
+								// std::cout << p->pos.x << ' ' << p->pos.y << ' ' << pos.x << ' ' << pos.y << '\n';
+								if (std::abs((int)p->pos.x - (int)pos.x) > 1 ||
+									std::abs((int)p->pos.y - (int)pos.y) > 1) { // moved 2 tiles
+									update_player(p, (PlayMode::Dir)dir, glm::vec2((p->pos.x + pos.x) / 2,
+															(p->pos.y + pos.y) / 2), elapsed);
+								}
+								update_player(p, (PlayMode::Dir)dir, pos, elapsed);
+							}
 						}
 					}
 					//and consume this part of the buffer:
-					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + byte_index);
+					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2 + num_players * 4);
 				}
 				else if (type == 'g') {
 					if (c->recv_buffer.size() < 3) break; //if whole message isn't here, can't process
@@ -259,7 +296,6 @@ void PlayMode::update(float elapsed) {
 				else if (type == 'i') {
 					if (c->recv_buffer.size() < 2) break; //if whole message isn't here, can't process
 					local_id = c->recv_buffer[1];
-					std::cout << "local_id: " + std::to_string(local_id) << std::endl;
 					gameState = IN_GAME;
 					c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 				}
@@ -301,6 +337,7 @@ void PlayMode::update(float elapsed) {
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	//vertices will be accumulated into this list and then uploaded+drawn at the end of this function:
 	std::vector< Vertex > vertices;
+	std::vector< Vertex > splash_vertices;
 
 	//compute area that should be visible:
 	glm::vec2 scene_min = glm::vec2(-PADDING, -PADDING);
@@ -326,76 +363,143 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
 	);
 
-	draw_tiles(vertices);
-	draw_players(vertices);
+	scene_min = glm::vec2(0, 0);
+	scene_max = splash_screen_size;
+
+	scale = std::min(
+		(2.0f * aspect) / (scene_max.x - scene_min.x), //... x must fit in [-aspect,aspect] ...
+		(2.0f) / (scene_max.y - scene_min.y) //... y must fit in [-1,1].
+	);
+
+	center = 0.5f * (scene_max + scene_min);
+
+	glm::mat4 splash_to_clip = glm::mat4(
+		glm::vec4(scale / aspect, 0.0f, 0.0f, 0.0f),
+		glm::vec4(0.0f, scale, 0.0f, 0.0f),
+		glm::vec4(0.0f, 0.0f, 1.0f, 0.0f),
+		glm::vec4(-center.x * (scale / aspect), -center.y * scale, 0.0f, 1.0f)
+	);
+
 	// draw the borders for debugging purposes
 	// draw_borders(hex_to_color_vec(border_color), vertices);
 
-	if (gameState == QUEUEING) {
-		draw_text(vertices, "QUEUEING...", glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE + 20.0f), glm::u8vec4(255, 255, 255, 255));
-		draw_text(vertices, std::to_string(lobby_size) + "/2", glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE - 20.0f), glm::u8vec4(255, 255, 255, 255));
+	switch(gameState) {
+		case MAIN_MENU:
+			draw_splash(splash_vertices);
+			draw_text(vertices, "PRESS SPACE TO ENTER QUEUE", glm::vec2(0.5f * GRID_W, 0.5f * GRID_H - 150.0f), glm::u8vec4(255, 255, 255, 255));
+			break;
+		case QUEUEING:
+			draw_text(vertices, "QUEUEING...", glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE + 20.0f), glm::u8vec4(255, 255, 255, 255));
+			draw_text(vertices, std::to_string(lobby_size) + "/2 PLAYERS", glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE - 20.0f), glm::u8vec4(255, 255, 255, 255));
+			break;
+		case IN_GAME:
+			draw_tiles(vertices);
+			draw_players(vertices);
+			if (GAME_OVER) {
+				std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
+				draw_text(vertices, msg, glm::vec2(GRID_W * 0.5f, GRID_H * 0.5f), hex_to_color_vec(player_colors[winner_id]));
+				draw_text(vertices, "PRESS SPACE TO PLAY AGAIN", glm::vec2(GRID_W * 0.5f, GRID_H * 0.5f - 80.0f), glm::u8vec4(255, 255, 255, 255));
+			} 
+			size_t num_players = players.size();
+			size_t i = 0;
+			for (auto &[id, player] : players) {
+				std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
+				draw_text(vertices, msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
+				i++;
+			}
+			if (start_countdown > 0) {
+				std::string msg = std::to_string(start_countdown / 10 + 1);
+				draw_text(vertices, msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE), glm::u8vec4(255, 255, 255, 255));
+			}
+			break;
 	}
-	else if (gameState == IN_GAME) {
-		if (GAME_OVER) {
-			std::string msg = "PLAYER " + std::to_string(winner_id) + " WON";
-			draw_text(vertices, msg, glm::vec2(GRID_W * 0.5f, GRID_H * 0.5f), hex_to_color_vec(player_colors[winner_id]));
-		} 
-		size_t num_players = players.size();
-		size_t i = 0;
-		for (auto &[id, player] : players) {
-			std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
-			draw_text(vertices, msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
-			i++;
-		}
-		if (start_countdown > 0) {
-			std::string msg = std::to_string(start_countdown / 10 + 1);
-			draw_text(vertices, msg, glm::vec2(0.5f * NUM_COLS * TILE_SIZE, 0.5 * NUM_ROWS * TILE_SIZE), glm::u8vec4(255, 255, 255, 255));
-		}
+
+	{
+		// draw splash screen
+
+		glClearColor(hex_to_color_vec(bg_color).r / 255.0f, 
+					hex_to_color_vec(bg_color).g / 255.0f, 
+					hex_to_color_vec(bg_color).b / 255.0f, 
+					hex_to_color_vec(bg_color).a / 255.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		//use alpha blending:
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		//don't use the depth test:
+		glDisable(GL_DEPTH_TEST);
+
+		//upload vertices to vertex_buffer:
+		glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer); //set vertex_buffer as current
+		glBufferData(GL_ARRAY_BUFFER, splash_vertices.size() * sizeof(splash_vertices[0]), splash_vertices.data(), GL_STREAM_DRAW); //upload vertices array
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		//set color_texture_program as current program:
+		glUseProgram(color_texture_program->program);
+
+		//upload OBJECT_TO_CLIP to the proper uniform location:
+		glUniformMatrix4fv(color_texture_program->OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(splash_to_clip));
+
+		//use the mapping vertex_buffer_for_color_texture_program to fetch vertex data:
+		glBindVertexArray(vertex_buffer_for_color_texture_program);
+
+		//bind the solid white texture to location zero so things will be drawn just with their colors:
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, splash_tex);
+
+		//run the OpenGL pipeline:
+		glDrawArrays(GL_TRIANGLES, 0, GLsizei(splash_vertices.size()));
+
+		//unbind the solid white texture:
+		glBindTexture(GL_TEXTURE_2D, 0);
+
+		//reset vertex array to none:
+		glBindVertexArray(0);
+
+		//reset current program to none:
+		glUseProgram(0);
 	}
 
-	//---- actual drawing ----
-	//clear the color buffer:
-	glClearColor(hex_to_color_vec(bg_color).r / 255.0f, 
-				hex_to_color_vec(bg_color).g / 255.0f, 
-				hex_to_color_vec(bg_color).b / 255.0f, 
-				hex_to_color_vec(bg_color).a / 255.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
 
-	//use alpha blending:
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	//don't use the depth test:
-	glDisable(GL_DEPTH_TEST);
+	{
 
-	//upload vertices to vertex_buffer:
-	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer); //set vertex_buffer as current
-	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STREAM_DRAW); //upload vertices array
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
+		//use alpha blending:
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		//don't use the depth test:
+		glDisable(GL_DEPTH_TEST);
 
-	//set color_texture_program as current program:
-	glUseProgram(color_texture_program->program);
+		//upload vertices to vertex_buffer:
+		glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer); //set vertex_buffer as current
+		glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STREAM_DRAW); //upload vertices array
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	//upload OBJECT_TO_CLIP to the proper uniform location:
-	glUniformMatrix4fv(color_texture_program->OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(court_to_clip));
+		//set color_texture_program as current program:
+		glUseProgram(color_texture_program->program);
 
-	//use the mapping vertex_buffer_for_color_texture_program to fetch vertex data:
-	glBindVertexArray(vertex_buffer_for_color_texture_program);
+		//upload OBJECT_TO_CLIP to the proper uniform location:
+		glUniformMatrix4fv(color_texture_program->OBJECT_TO_CLIP_mat4, 1, GL_FALSE, glm::value_ptr(court_to_clip));
 
-	//bind the solid white texture to location zero so things will be drawn just with their colors:
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, sprite_tex);
+		//use the mapping vertex_buffer_for_color_texture_program to fetch vertex data:
+		glBindVertexArray(vertex_buffer_for_color_texture_program);
 
-	//run the OpenGL pipeline:
-	glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
+		//bind the solid white texture to location zero so things will be drawn just with their colors:
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, sprite_tex);
 
-	//unbind the solid white texture:
-	glBindTexture(GL_TEXTURE_2D, 0);
+		//run the OpenGL pipeline:
+		glDrawArrays(GL_TRIANGLES, 0, GLsizei(vertices.size()));
 
-	//reset vertex array to none:
-	glBindVertexArray(0);
+		//unbind the solid white texture:
+		glBindTexture(GL_TEXTURE_2D, 0);
 
-	//reset current program to none:
-	glUseProgram(0);
+		//reset vertex array to none:
+		glBindVertexArray(0);
+
+		//reset current program to none:
+		glUseProgram(0);
+	}
+
 
 	// draw the background
 	// { 	
@@ -407,7 +511,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 	// }
 
 	// draw the bloom light
-	{ 	
+	if (gameState == IN_GAME) { 	
 		for (auto& [id, player] : players) {
 			uint32_t trail_color = trail_colors[id];
 			DrawBloom bloom(court_to_clip);
@@ -443,6 +547,21 @@ glm::u8vec4 PlayMode::hex_to_color_vec(int color_hex) {
 						(color_hex >> 16) & 0xff, 
 						(color_hex >> 8) & 0xff, 
 						(color_hex) & 0xff);
+}
+
+void PlayMode::reset_state() {
+	tiles.clear();
+	visual_board.clear();
+	init_tiles();
+	lobby_size = 0;
+	GAME_OVER = false;
+	players.clear();
+	for (int col = 0; col < NUM_COLS; col++) {
+		for (int row = 0; row < NUM_ROWS; row++) {
+			if (tiles[col][row].color != base_color) std::cout << "jfkdsjlf" << std::endl;
+			if (tiles[col][row].age != 0) std::cout << "age !=0 " << std::endl;
+		}
+	}
 }
 
 void PlayMode::init_tiles() {
@@ -515,6 +634,7 @@ void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) 
 		p->powerup_type = tiles[x][y].powerup.type;
 		// std::cout << tiles[x][y].powerup;
 		tiles[x][y].powerup.type = no_powerup;
+		
 	}
 
 	// player enters their own territory
@@ -816,9 +936,23 @@ void PlayMode::draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm:
 	vertices.emplace_back(glm::vec3(pos.x, pos.y + size.y, 0.0f), color, glm::vec2(tilepos.x, tilepos.y + tilesize.y));
 }
 
+void PlayMode::draw_splash(std::vector< Vertex >& vertices) {
+	// std::cout << "tilepos: " + glm::to_string(tilepos) + ", tilesize: " + glm::to_string(tilesize) << std::endl;
+	glm::vec2 pos = glm::vec2(0.0f, 0.0f);//glm::vec2(0.5f * GRID_W, 0.5f * GRID_H) - 0.5f * splash_screen_size;
+	glm::u8vec4 color = glm::u8vec4(255, 255, 255, 255);
+
+	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.0f, 0.0f));
+	vertices.emplace_back(glm::vec3(pos.x + splash_screen_size.x, pos.y, 0.0f), color, glm::vec2(1.0f, 0.0f));
+	vertices.emplace_back(glm::vec3(pos.x + splash_screen_size.x, pos.y + splash_screen_size.y, 0.0f), color, glm::vec2(1.0f, 1.0f));
+
+	vertices.emplace_back(glm::vec3(pos.x, pos.y, 0.0f), color, glm::vec2(0.0f, 0.0f));
+	vertices.emplace_back(glm::vec3(pos.x + splash_screen_size.x, pos.y + splash_screen_size.y, 0.0f), color, glm::vec2(1.0f, 1.0f));
+	vertices.emplace_back(glm::vec3(pos.x, pos.y + splash_screen_size.y, 0.0f), color, glm::vec2(0.0f, 1.0f));
+}
+
 void PlayMode::draw_text(std::vector< Vertex >& vertices, std::string msg, glm::vec2 anchor, glm::u8vec4 color) {
 	auto draw_string = [&](std::string str, glm::vec2 at, glm::u8vec4 color) {
-		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.%/ ";
+		std::string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.%/> ";
 
 		for (size_t i = 0; i < str.size(); i++) {
 			for (size_t j = 0; j < alphabet.size(); j++) {
@@ -882,7 +1016,6 @@ void PlayMode::win_game(uint8_t id, uint32_t area) {
 	GAME_OVER = true;
 	winner_id = id;
 	winner_score = area;
-	std::cout << "game over" << ' ' << (int)winner_id << ' ' << winner_score << '\n';
 }
 
 // shortest path using Dijkstra's algorithm (returns empty vector if no path exists)

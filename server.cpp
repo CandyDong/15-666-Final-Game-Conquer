@@ -75,6 +75,27 @@ const uint32_t LEVEL_GROW_INTERVAL = 100; // in ticks
 //static size_t winner_score = 0;
 //static bool GAME_OVER = false;
 
+void add_to_matchmaking_queue(Connection* c) {
+	matchmaking_queue.emplace_back(c);
+	for (Connection* cc : matchmaking_queue) {
+		cc->send('q');
+		cc->send(uint8_t(matchmaking_queue.size()));
+	}
+	if (matchmaking_queue.size() >= START_GAME_PLAYERS) { // we have enough players to start a game
+		games.push_back(Game());
+		for (uint8_t i = 0; i < START_GAME_PLAYERS; i++) {
+			Connection* cc = matchmaking_queue.front();
+			matchmaking_queue.pop_front();
+			games.back().players.emplace(cc, PlayerInfo(games.back().init_positions, i));
+			cc->send('i');
+			cc->send(i);
+			cc->send('g');
+			cc->send(uint8_t(games.back().horizontal_border));
+			cc->send(uint8_t(games.back().vertical_border));
+		}
+	}
+}
+
 int main(int argc, char **argv) {
 #ifdef _WIN32
 	//when compiled on windows, unhandled exceptions don't have their message printed, which can make debugging simple issues difficult.
@@ -110,24 +131,6 @@ int main(int argc, char **argv) {
 				if (evt == Connection::OnOpen) {
 					std::cout << "connected" << '\n';
 					//client connected:
-					matchmaking_queue.emplace_back(c);
-					for (Connection* c : matchmaking_queue) {
-						c->send('q');
-						c->send(uint8_t(matchmaking_queue.size()));
-					}
-					if (matchmaking_queue.size() >= START_GAME_PLAYERS) { // we have enough players to start a game
-						games.push_back(Game());
-						for (uint8_t i = 0; i < START_GAME_PLAYERS; i++) {
-							Connection* cc = matchmaking_queue.front();
-							matchmaking_queue.pop_front();
-							games.back().players.emplace(cc, PlayerInfo(games.back().init_positions, i));
-							cc->send('i');
-							cc->send(i);
-							cc->send('g');
-							cc->send(uint8_t(games.back().horizontal_border));
-							cc->send(uint8_t(games.back().vertical_border));
-						}
-					}
 				}
 				else if (evt == Connection::OnClose) {
 					//client disconnected:
@@ -157,6 +160,12 @@ int main(int argc, char **argv) {
 				else {
 					assert(evt == Connection::OnRecv);
 
+					// check if it's a join queue from main menu screen (this only occurs once per connection)
+					if (c->recv_buffer.size() >= 1 && c->recv_buffer[0] == 'q') {
+						add_to_matchmaking_queue(c);
+						c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 1);
+					}
+
 					//look up in players list:
 					for (auto it = games.rbegin(); it != games.rend(); it++) {
 						auto &game = *it;
@@ -173,12 +182,13 @@ int main(int argc, char **argv) {
 									player.dir = c->recv_buffer[1];
 									c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 2);
 								}
-								else if (type == 'd') {
+								else if (type == 'd') { // disconnect from game, go back to lobby
 									game.players.erase(f);
 									if (game.players.size() == 0) {
 										games.erase(std::next(it).base());
 										std::cout << "empty game, removing" << std::endl;
 									}
+									add_to_matchmaking_queue(c);
 									c->recv_buffer.erase(c->recv_buffer.begin(), c->recv_buffer.begin() + 1);
 								}
 								else if (type == 'l') {

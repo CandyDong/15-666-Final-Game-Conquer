@@ -55,10 +55,8 @@ struct PlayMode : Mode
 	const std::vector<uint32_t> trail_colors{0x8762c5ff,  0xffdf83ff, 0xffa980ff, 0xca679fff};
 
 	//----- game state -----
-	float total_elapsed = 0.0f;
-
-	enum GameState { QUEUEING, IN_GAME };
-	GameState gameState = QUEUEING;
+	enum GameState { MAIN_MENU, QUEUEING, IN_GAME };
+	GameState gameState = MAIN_MENU;
 	uint8_t lobby_size = 0;
 
 	bool GAME_OVER = false;
@@ -110,6 +108,8 @@ struct PlayMode : Mode
 	GLuint vertex_buffer_for_color_texture_program = 0;
 	GLuint sprite_tex = 0;
 	glm::vec2 sprite_sheet_size;
+	GLuint splash_tex = 0;
+	glm::vec2 splash_screen_size;
 	const float SPRITE_SIZE = 16.0f;
 
 	struct Vertex
@@ -125,6 +125,7 @@ struct PlayMode : Mode
 
 	// ------ helpers -------
 	glm::u8vec4 hex_to_color_vec(int color_hex);
+	void reset_state();
 	void init_tiles();
 
 	void create_player(uint8_t id, Dir dir, glm::uvec2 pos);
@@ -140,6 +141,7 @@ struct PlayMode : Mode
 
 	void draw_tiles(std::vector<Vertex> &vertices);
 	void draw_players(std::vector<Vertex> &vertices);
+	void draw_splash(std::vector< Vertex >& vertices);
 	void draw_texture(std::vector< Vertex >& vertices, glm::vec2 pos, glm::vec2 size, glm::vec2 tilepos, glm::vec2 tilesize, glm::u8vec4 color);
 	void draw_text(std::vector< Vertex >& vertices, std::string msg, glm::vec2 anchor, glm::u8vec4 color);
 

@@ -639,79 +639,82 @@ void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) 
 
 	// player enters their own territory
 	if (tiles[x][y].color == player_colors[id]) {
-		// update player's territory and clear player's trail
-		uint32_t trail_size = 0;
-		for (int col = 0; col < NUM_COLS; col++) {
-			for (int row = 0; row < NUM_ROWS; row++) {
-				if (tiles[col][row].color == trail_colors[id]) {
-					tiles[col][row].color = player_colors[id];
-					trail_size++;
-				}
-			}
-		}
+		//// update player's territory and clear player's trail
+		//uint32_t trail_size = 0;
+		//for (int col = 0; col < NUM_COLS; col++) {
+		//	for (int row = 0; row < NUM_ROWS; row++) {
+		//		if (tiles[col][row].color == trail_colors[id]) {
+		//			tiles[col][row].color = player_colors[id];
+		//			trail_size++;
+		//		}
+		//	}
+		//}
 
-		uint32_t territory_size = 0; uint32_t delta_size = 0;
-		fill_interior(player_colors[id], delta_size, territory_size);
-		if (moving && (delta_size + trail_size) > 0) { 
-			Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
-		}
+		//uint32_t territory_size = 0; uint32_t delta_size = 0;
+		//fill_interior(player_colors[id], delta_size, territory_size);
+		//if (moving && (delta_size + trail_size) > 0) { 
+		//	Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
+		//}
 
-		update_areas();
+		//update_areas();
 
-		// check if player has won
-		if (territory_size > WIN_THRESHOLD) {
-			win_game(id, territory_size);
-		}
+		//// check if player has won
+		//if (territory_size > WIN_THRESHOLD) {
+		//	win_game(id, territory_size);
+		//}
 	}
 	// player hits their own trail
 	else if (tiles[x][y].color == trail_colors[id]) {
-		if (moving) {
-			// create allowed_tiles -> player's trail - previous tile
-			std::vector< glm::uvec2 > allowed_tiles;
-			for (int col = 0; col < NUM_COLS; col++) {
-				for (int row = 0; row < NUM_ROWS; row++) {
-					if (tiles[col][row].color == trail_colors[id]) {
-						glm::uvec2 allowed_pos = glm::uvec2(col, row);
-						// disconnect loop, so that the shortest path has to go the long way around the loop
-						if (allowed_pos != p->prev_pos[0])
-							allowed_tiles.emplace_back(col, row);
-					}
-				}
-			}
+		// update trail age
+		tiles[x][y].age = 0;
 
-			// find shortest path "around" the loop
-			std::vector<glm::uvec2> path = shortest_path(p->prev_pos[1], pos, allowed_tiles);
-			assert(path.size() > 0 && "path around loop must exist"); // assert a path exists
-			// reconnect loop
-			path.push_back(p->prev_pos[0]);
+		//if (moving) {
+		//	// create allowed_tiles -> player's trail - previous tile
+		//	std::vector< glm::uvec2 > allowed_tiles;
+		//	for (int col = 0; col < NUM_COLS; col++) {
+		//		for (int row = 0; row < NUM_ROWS; row++) {
+		//			if (tiles[col][row].color == trail_colors[id]) {
+		//				glm::uvec2 allowed_pos = glm::uvec2(col, row);
+		//				// disconnect loop, so that the shortest path has to go the long way around the loop
+		//				if (allowed_pos != p->prev_pos[0])
+		//					allowed_tiles.emplace_back(col, row);
+		//			}
+		//		}
+		//	}
 
-			// clear player's trail
-			allowed_tiles.push_back(p->prev_pos[0]); // re-add previous tile
-			for (auto allowed_pos : allowed_tiles) {
-				if (tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color == trail_colors[id])
-					tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color = base_color;
-			}
+		//	// find shortest path "around" the loop
+		//	std::vector<glm::uvec2> path = shortest_path(p->prev_pos[1], pos, allowed_tiles);
+		//	assert(path.size() > 0 && "path around loop must exist"); // assert a path exists
+		//	// reconnect loop
+		//	path.push_back(p->prev_pos[0]);
 
-			// add loop to territory
-			uint32_t trail_size = 0;
-			for (glm::uvec2 pos : path) {
-				tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = player_colors[id];
-				trail_size++;
-			}
+		//	// clear player's trail
+		//	allowed_tiles.push_back(p->prev_pos[0]); // re-add previous tile
+		//	for (auto allowed_pos : allowed_tiles) {
+		//		if (tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color == trail_colors[id])
+		//			tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color = base_color;
+		//	}
 
-			uint32_t territory_size = 0; uint32_t delta_size = 0;
-			fill_interior(player_colors[id], delta_size, territory_size);
-			if (moving && (trail_size + delta_size) > 0) { 
-				Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
-			}
+		//	// add loop to territory
+		//	uint32_t trail_size = 0;
+		//	for (glm::uvec2 pos : path) {
+		//		tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = player_colors[id];
+		//		trail_size++;
+		//	}
 
-			update_areas();
+		//	uint32_t territory_size = 0; uint32_t delta_size = 0;
+		//	fill_interior(player_colors[id], delta_size, territory_size);
+		//	if (moving && (trail_size + delta_size) > 0) { 
+		//		Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
+		//	}
 
-			// check if player has won
-			if (territory_size > WIN_THRESHOLD) {
-				win_game(id, territory_size);
-			}
-		}
+		//	update_areas();
+
+		//	// check if player has won
+		//	if (territory_size > WIN_THRESHOLD) {
+		//		win_game(id, territory_size);
+		//	}
+		//}
 	}
 	// player hits other player's trail or territory
 	else if (tiles[x][y].color != base_color) {
@@ -746,6 +749,92 @@ void PlayMode::update_player(Player* p, Dir dir, glm::uvec2 pos, float elapsed) 
 		// update player's trail
 		tiles[x][y].color = trail_colors[id];
 		tiles[x][y].age = 0;
+
+		if ((tiles[x - 1][y].color == player_colors[id] && p->prev_pos[0] != glm::uvec2(x - 1, y)) ||
+			(tiles[x + 1][y].color == player_colors[id] && p->prev_pos[0] != glm::uvec2(x + 1, y)) ||
+			(tiles[x][y - 1].color == player_colors[id] && p->prev_pos[0] != glm::uvec2(x, y - 1)) ||
+			(tiles[x][y + 1].color == player_colors[id] && p->prev_pos[0] != glm::uvec2(x, y + 1))) {
+			// player's trail and territory formed a loop
+			// update player's territory and clear player's trail
+			uint32_t trail_size = 0;
+			for (int col = 0; col < NUM_COLS; col++) {
+				for (int row = 0; row < NUM_ROWS; row++) {
+					if (tiles[col][row].color == trail_colors[id]) {
+						tiles[col][row].color = player_colors[id];
+						trail_size++;
+					}
+				}
+			}
+
+			uint32_t territory_size = 0; uint32_t delta_size = 0;
+			fill_interior(player_colors[id], delta_size, territory_size);
+			if (moving && (delta_size + trail_size) > 0) {
+				Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f);
+			}
+
+			update_areas();
+
+			// check if player has won
+			if (territory_size > WIN_THRESHOLD) {
+				win_game(id, territory_size);
+			}
+		}
+
+		else {
+			int count = 0; // count of player's trails around current tile
+			if (tiles[x - 1][y].color == trail_colors[id]) count++;
+			if (tiles[x + 1][y].color == trail_colors[id]) count++;
+			if (tiles[x][y - 1].color == trail_colors[id]) count++;
+			if (tiles[x][y + 1].color == trail_colors[id]) count++;
+
+			if (count > 1) { // player's trail formed a loop
+				// create allowed_tiles -> player's trail - previous tile
+				std::vector< glm::uvec2 > allowed_tiles;
+				for (int col = 0; col < NUM_COLS; col++) {
+					for (int row = 0; row < NUM_ROWS; row++) {
+						if (tiles[col][row].color == trail_colors[id]) {
+							glm::uvec2 allowed_pos = glm::uvec2(col, row);
+							// disconnect loop, so that the shortest path has to go the long way around the loop
+							if (allowed_pos != p->prev_pos[0])
+								allowed_tiles.emplace_back(col, row);
+						}
+					}
+				}
+
+				// find shortest path "around" the loop
+				std::vector<glm::uvec2> path = shortest_path(p->prev_pos[1], pos, allowed_tiles);
+				assert(path.size() > 0 && "path around loop must exist"); // assert a path exists
+				// reconnect loop
+				path.push_back(p->prev_pos[0]);
+
+				// clear player's trail
+				allowed_tiles.push_back(p->prev_pos[0]); // re-add previous tile
+				for (auto allowed_pos : allowed_tiles) {
+					if (tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color == trail_colors[id])
+						tiles[(uint8_t)allowed_pos.x][(uint8_t)allowed_pos.y].color = base_color;
+				}
+
+				// add loop to territory
+				uint32_t trail_size = 0;
+				for (glm::uvec2 pos : path) {
+					tiles[(uint8_t)pos.x][(uint8_t)pos.y].color = player_colors[id];
+					trail_size++;
+				}
+
+				uint32_t territory_size = 0; uint32_t delta_size = 0;
+				fill_interior(player_colors[id], delta_size, territory_size);
+				if (moving && (trail_size + delta_size) > 0) { 
+					Sound::play(*success_sample, (p->id == local_id) ? 0.3f : 0.0f, 0.0f); 
+				}
+
+				update_areas();
+
+				// check if player has won
+				if (territory_size > WIN_THRESHOLD) {
+					win_game(id, territory_size);
+				}
+			}
+		}
 	}
 }
 

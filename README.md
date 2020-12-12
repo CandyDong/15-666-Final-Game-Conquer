@@ -1,8 +1,8 @@
-#  (TODO: your game's title)
+#  CONQUER
 
   
 
-## Author: <br />
+## Authors: <br />
 
 Alton Olson, Pengtao Ni, Qingyi Dong
 

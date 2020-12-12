@@ -403,7 +403,7 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 			size_t num_players = players.size();
 			size_t i = 0;
 			for (auto &[id, player] : players) {
-				std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS));
+				std::string msg = std::to_string((player.area * 100) / (NUM_ROWS * NUM_COLS)) + "%";
 				draw_text(vertices, msg, glm::vec2((i + 1) * NUM_COLS * TILE_SIZE / (num_players + 1), (NUM_ROWS - 2.0f) * TILE_SIZE), hex_to_color_vec(player_colors[id]));
 				i++;
 			}
@@ -973,15 +973,10 @@ void PlayMode::draw_text(std::vector< Vertex >& vertices, std::string msg, glm::
 	draw_string(msg, glm::vec2(anchor.x - 0.5f * width, anchor.y + 0.5f * 13.0f), color);
 }
 
-// clear powerup in tiles
-// clear player's powerup
-// create new random powerup in tiles
-
 glm::uvec2 PlayMode::get_new_powerup_location() {
 	std::vector<glm::uvec2> empty_pos;
 	for (int x = horizontal_border; x < NUM_COLS - 1 - horizontal_border; x++) {
 		for (int y = vertical_border; y < NUM_ROWS - 1 - vertical_border; y++) {
-			tiles[x][y].powerup.type = no_powerup;
 			if (tiles[x][y].color == base_color) {
 				empty_pos.push_back(glm::uvec2(x, y));
 			}
@@ -991,6 +986,11 @@ glm::uvec2 PlayMode::get_new_powerup_location() {
 }
 
 void PlayMode::new_powerup(PowerupType type, glm::uvec2 location) {
+	for (int x = horizontal_border; x < NUM_COLS - 1 - horizontal_border; x++) {
+		for (int y = vertical_border; y < NUM_ROWS - 1 - vertical_border; y++) {
+			tiles[x][y].powerup.type = no_powerup;
+		}
+	}
 	for (auto& [id, player] : players) {
 		(void) id;
 		player.powerup_type = no_powerup;
